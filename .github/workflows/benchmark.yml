@@ -1,0 +1,102 @@
+name: Benchmark h5py with latest HDF5
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout h5py
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake pkg-config libssl-dev zlib1g-dev
+
+    - name: Checkout latest HDF5
+      uses: actions/checkout@v4
+      with:
+        repository: HDFGroup/hdf5
+        path: hdf5-src
+        ref: develop
+
+    - name: Build HDF5
+      run: |
+        cd hdf5-src
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/hdf5 -DCMAKE_BUILD_TYPE=Release -DHDF5_BUILD_TESTS=OFF -DHDF5_BUILD_EXAMPLES=OFF
+        make -j$(nproc)
+        make install
+
+    - name: Set HDF5 environment
+      run: |
+        echo "HDF5_DIR=$HOME/hdf5" >> $GITHUB_ENV
+        echo "PKG_CONFIG_PATH=$HOME/hdf5/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+        echo "LD_LIBRARY_PATH=$HOME/hdf5/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+
+    - name: Install h5py dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install numpy cython wheel
+
+    - name: Build and install h5py
+      run: |
+        export HDF5_DIR=$HOME/hdf5
+        python -m pip install .
+
+    - name: Run benchmark
+      run: |
+        python benchmarks/benchmark_slicing.py > test-results.txt 2>&1
+
+    - name: Parse benchmark results
+      run: |
+        python parse_benchmark.py
+
+    - name: Store time-based benchmark results
+      uses: benchmark-action/github-action-benchmark@v1
+      with:
+        tool: 'customSmallerIsBetter'
+        output-file-path: benchmark-time.json
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        auto-push: true
+        gh-pages-branch: gh-pages
+        benchmark-data-dir-path: 'benchmarks/time'
+        comment-on-alert: true
+        alert-threshold: '200%'
+        fail-on-alert: false
+
+    - name: Store speed-based benchmark results
+      uses: benchmark-action/github-action-benchmark@v1
+      with:
+        tool: 'customBiggerIsBetter'
+        output-file-path: benchmark-speed.json
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        auto-push: true
+        gh-pages-branch: gh-pages
+        benchmark-data-dir-path: 'benchmarks/speed'
+        comment-on-alert: true
+        alert-threshold: '50%'
+        fail-on-alert: false
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results
+        path: |
+          test-results.txt
+          benchmark-data.json

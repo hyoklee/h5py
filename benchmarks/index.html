@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>h5py Performance Benchmarks</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #24292e;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .benchmark-section {
+            margin: 40px 0;
+            padding: 20px;
+            border: 1px solid #e1e4e8;
+            border-radius: 6px;
+        }
+        .benchmark-section h2 {
+            margin-top: 0;
+            color: #0366d6;
+        }
+        .benchmark-link {
+            display: inline-block;
+            background-color: #0366d6;
+            color: white;
+            padding: 12px 20px;
+            text-decoration: none;
+            border-radius: 6px;
+            margin: 10px;
+            transition: background-color 0.2s;
+        }
+        .benchmark-link:hover {
+            background-color: #0256cc;
+        }
+        .description {
+            background-color: #f6f8fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>h5py Performance Benchmarks</h1>
+        <p>Automated performance benchmarks for h5py against the latest HDF5 development version</p>
+    </div>
+
+    <div class="benchmark-section">
+        <h2>Time-based Benchmarks (Lower is Better)</h2>
+        <div class="description">
+            <p>These benchmarks measure execution times for various h5py operations. Lower values indicate better performance.</p>
+            <ul>
+                <li><strong>Write Time:</strong> Time to write data to HDF5 file</li>
+                <li><strong>Sequential Read Time:</strong> Time to read data sequentially</li>
+                <li><strong>Threaded Read Time:</strong> Time to read data using multiple threads</li>
+            </ul>
+        </div>
+        <a href="time/index.html" class="benchmark-link">View Time Benchmarks →</a>
+    </div>
+
+    <div class="benchmark-section">
+        <h2>Speed-based Benchmarks (Higher is Better)</h2>
+        <div class="description">
+            <p>These benchmarks measure throughput speeds for various h5py operations. Higher values indicate better performance.</p>
+            <ul>
+                <li><strong>Data Saving Speed:</strong> Uncompressed data writing throughput</li>
+                <li><strong>Effective Write Speed:</strong> Actual file writing throughput</li>
+                <li><strong>Sequential Read Speed:</strong> Sequential data reading throughput</li>
+                <li><strong>Threaded Read Speed:</strong> Multi-threaded data reading throughput</li>
+            </ul>
+        </div>
+        <a href="speed/index.html" class="benchmark-link">View Speed Benchmarks →</a>
+    </div>
+
+    <div class="benchmark-section">
+        <h2>About These Benchmarks</h2>
+        <div class="description">
+            <p>These benchmarks are automatically run daily against the latest HDF5 development version from GitHub.
+            The benchmarks use the slicing benchmark from h5py's test suite, which exercises pathological read patterns
+            across chunked datasets to stress-test I/O performance.</p>
+
+            <p><strong>Test Environment:</strong></p>
+            <ul>
+                <li>Ubuntu Latest (GitHub Actions)</li>
+                <li>Latest HDF5 from develop branch</li>
+                <li>Python 3.11</li>
+                <li>Dataset: 1024³ float32 volume with 64³ chunks</li>
+                <li>Test pattern: Orthogonal hyperplane reads (worst-case scenario)</li>
+            </ul>
+
+            <p>Results are stored using <a href="https://github.com/benchmark-action/github-action-benchmark">github-action-benchmark</a>
+            and updated automatically with each benchmark run.</p>
+        </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #e1e4e8;">
+        <p><a href="../index.html">← Back to h5py Documentation</a></p>
+        <p style="color: #6a737d; font-size: 0.9em;">
+            Last updated: <span id="last-update">Loading...</span>
+        </p>
+    </div>
+
+    <script>
+        // Set last update time to current time (will be updated by benchmark action)
+        document.getElementById('last-update').textContent = new Date().toLocaleString();
+    </script>
+</body>
+</html>
