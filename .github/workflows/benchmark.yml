@@ -34,7 +34,41 @@ jobs:
         path: hdf5-src
         ref: develop
 
+    - name: Get HDF5 commit hash
+      id: hdf5-hash
+      run: |
+        cd hdf5-src
+        HDF5_HASH=$(git rev-parse HEAD)
+        echo "hash=$HDF5_HASH" >> $GITHUB_OUTPUT
+        echo "HDF5 commit hash: $HDF5_HASH"
+
+    - name: Check previous HDF5 hash
+      id: check-hash
+      run: |
+        # Try to get the previous hash from gh-pages branch
+        PREV_HASH=""
+        if git ls-remote --heads origin gh-pages >/dev/null 2>&1; then
+          # Clone gh-pages branch to get previous hash
+          git clone --single-branch --branch gh-pages https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} gh-pages-temp || true
+          if [ -f gh-pages-temp/hdf5-hash.txt ]; then
+            PREV_HASH=$(cat gh-pages-temp/hdf5-hash.txt)
+          fi
+          rm -rf gh-pages-temp
+        fi
+
+        echo "Previous HDF5 hash: ${PREV_HASH:-none}"
+        echo "Current HDF5 hash: ${{ steps.hdf5-hash.outputs.hash }}"
+
+        if [ "$PREV_HASH" = "${{ steps.hdf5-hash.outputs.hash }}" ] && [ "${{ github.event_name }}" = "schedule" ]; then
+          echo "skip_tests=true" >> $GITHUB_OUTPUT
+          echo "No HDF5 changes detected, skipping tests for scheduled run"
+        else
+          echo "skip_tests=false" >> $GITHUB_OUTPUT
+          echo "HDF5 changed or manual trigger, running tests"
+        fi
+
     - name: Build HDF5
+      if: steps.check-hash.outputs.skip_tests != 'true'
       run: |
         cd hdf5-src
         mkdir build
@@ -44,30 +78,36 @@ jobs:
         make install
 
     - name: Set HDF5 environment
+      if: steps.check-hash.outputs.skip_tests != 'true'
       run: |
         echo "HDF5_DIR=$HOME/hdf5" >> $GITHUB_ENV
         echo "PKG_CONFIG_PATH=$HOME/hdf5/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
         echo "LD_LIBRARY_PATH=$HOME/hdf5/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
     - name: Install h5py dependencies
+      if: steps.check-hash.outputs.skip_tests != 'true'
       run: |
         python -m pip install --upgrade pip
         python -m pip install numpy cython wheel
 
     - name: Build and install h5py
+      if: steps.check-hash.outputs.skip_tests != 'true'
       run: |
         export HDF5_DIR=$HOME/hdf5
         python -m pip install .
 
     - name: Run benchmark
+      if: steps.check-hash.outputs.skip_tests != 'true'
       run: |
         python benchmarks/benchmark_slicing.py > test-results.txt 2>&1
 
     - name: Parse benchmark results
+      if: steps.check-hash.outputs.skip_tests != 'true'
       run: |
         python parse_benchmark.py
 
     - name: Store time-based benchmark results
+      if: steps.check-hash.outputs.skip_tests != 'true'
       uses: benchmark-action/github-action-benchmark@v1
       with:
         tool: 'customSmallerIsBetter'
@@ -81,6 +121,7 @@ jobs:
         fail-on-alert: false
 
     - name: Store speed-based benchmark results
+      if: steps.check-hash.outputs.skip_tests != 'true'
       uses: benchmark-action/github-action-benchmark@v1
       with:
         tool: 'customBiggerIsBetter'
@@ -93,8 +134,28 @@ jobs:
         alert-threshold: '50%'
         fail-on-alert: false
 
+    - name: Update HDF5 hash file
+      if: steps.check-hash.outputs.skip_tests != 'true'
+      run: |
+        # Clone gh-pages to update hash file
+        git clone --single-branch --branch gh-pages https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} gh-pages-update
+        cd gh-pages-update
+        echo "${{ steps.hdf5-hash.outputs.hash }}" > hdf5-hash.txt
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add hdf5-hash.txt
+        git commit -m "update: HDF5 commit hash to ${{ steps.hdf5-hash.outputs.hash }}"
+        git push
+
+    - name: Skip message
+      if: steps.check-hash.outputs.skip_tests == 'true'
+      run: |
+        echo "⏭️ Skipping tests - no HDF5 changes detected since last run"
+        echo "Previous HDF5 hash matches current hash: ${{ steps.hdf5-hash.outputs.hash }}"
+
     - name: Upload test results
       uses: actions/upload-artifact@v4
+      if: steps.check-hash.outputs.skip_tests != 'true'
       with:
         name: benchmark-results
         path: |
