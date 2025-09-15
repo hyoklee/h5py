@@ -112,33 +112,18 @@ def create_benchmark_json(benchmarks, output_file='benchmark-data.json'):
             speed_benchmarks.append(benchmark)
 
     # Create separate JSON files for each type of benchmark
+    # The github-action-benchmark expects an array of benchmark objects, not a nested structure
     if time_benchmarks:
-        time_data = {
-            "schemaVersion": 1,
-            "tool": "customSmallerIsBetter",
-            "benchmarks": time_benchmarks
-        }
         with open('benchmark-time.json', 'w') as f:
-            json.dump(time_data, f, indent=2)
+            json.dump(time_benchmarks, f, indent=2)
 
     if speed_benchmarks:
-        speed_data = {
-            "schemaVersion": 1,
-            "tool": "customBiggerIsBetter",
-            "benchmarks": speed_benchmarks
-        }
         with open('benchmark-speed.json', 'w') as f:
-            json.dump(speed_data, f, indent=2)
+            json.dump(speed_benchmarks, f, indent=2)
 
     # Also create a combined file (using smaller is better as default)
-    combined_data = {
-        "schemaVersion": 1,
-        "tool": "customSmallerIsBetter",
-        "benchmarks": benchmarks
-    }
-
     with open(output_file, 'w') as f:
-        json.dump(combined_data, f, indent=2)
+        json.dump(benchmarks, f, indent=2)
 
     print(f"Created benchmark JSON files:")
     if time_benchmarks:
