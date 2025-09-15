@@ -14,8 +14,7 @@
 include "_locks.pxi"
 from .defs cimport *
 
-DEF USE_LOCKING = True
-DEF DEBUG_ID = False
+import os
 
 # --- Locking code ------------------------------------------------------------
 #
@@ -37,10 +36,16 @@ DEF DEBUG_ID = False
 # advertised for EITHER multithreaded use OR use alongside PyTables/NetCDF4,
 # but not both at the same time.
 
-IF USE_LOCKING:
-    cdef FastRLock _phil = FastRLock()
-ELSE:
-    cdef BogoLock _phil = BogoLock()
+### {{if OBJECTS_USE_LOCKING}}
+  ### {{if FREE_THREADING}}
+from threading import RLock
+_phil = RLock()
+  ### {{else}}
+cdef FastRLock _phil = FastRLock()
+  ### {{endif}}
+### {{else}}
+cdef BogoLock _phil = BogoLock()
+### {{endif}}
 
 # Python alias for access from other modules
 phil = _phil
@@ -56,6 +61,26 @@ def with_phil(func):
 
     functools.update_wrapper(wrapper, func)
     return wrapper
+
+def _phil_before_fork():
+    """
+    Acquire the `phil` lock before forking so no thread other
+    than the current (forking) thread is holding the lock.
+    """
+    _phil.acquire()
+
+def _phil_after_fork():
+    """
+    Release the lock after forking in both the parent and the child.
+    """
+    _phil.release()
+
+# Register fork handlers to safely handle `phil` Lock in forked child processes
+# in the presence of other threads which might potentially hold the lock.
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(before=_phil_before_fork,
+                        after_in_child=_phil_after_fork,
+                        after_in_parent=_phil_after_fork)
 
 # --- End locking code --------------------------------------------------------
 
@@ -148,9 +173,11 @@ def nonlocal_close():
 
         # Invalid object; set obj.id = 0 so it doesn't become a zombie
         if not H5Iis_valid(obj.id):
-            IF DEBUG_ID:
-                print("NONLOCAL - invalidating %d of kind %s HDF5 id %d" %
-                        (python_id, type(obj), obj.id) )
+            ### {{if OBJECTS_DEBUG_ID}}
+            print("NONLOCAL - invalidating %d of kind %s HDF5 id %d" %
+                  (python_id, type(obj), obj.id)
+            )
+            ### {{endif}}
             obj.id = 0
             continue
 
@@ -170,17 +197,17 @@ cdef class ObjectID:
     cdef size_t _pyid
     """
 
-    property fileno:
-        def __get__(self):
-            cdef H5G_stat_t stat
-            with _phil:
-                H5Gget_objinfo(self.id, '.', 0, &stat)
-                return (stat.fileno[0], stat.fileno[1])
+    @property
+    def fileno(self):
+        cdef H5G_stat_t stat
+        with _phil:
+            H5Gget_objinfo(self.id, '.', 0, &stat)
+            return (stat.fileno[0], stat.fileno[1])
 
 
-    property valid:
-        def __get__(self):
-            return is_h5py_obj_valid(self)
+    @property
+    def valid(self):
+        return is_h5py_obj_valid(self)
 
 
     def __cinit__(self, id_):
@@ -188,18 +215,25 @@ cdef class ObjectID:
             self.id = id_
             self.locked = 0
             self._pyid = id(self)
-            IF DEBUG_ID:
-                print("CINIT - registering %d of kind %s HDF5 id %d" % (self._pyid, type(self), self.id))
+            ### {{if OBJECTS_DEBUG_ID}}
+            print("CINIT - registering %d of kind %s HDF5 id %d" % (self._pyid, type(self), self.id))
+            ### {{endif}}
             registry[self._pyid] = weakref.ref(self)
 
 
     def __dealloc__(self):
+        self._dealloc()
+
+    # During interpreter shutdown, module attributes are set to None
+    # before __dealloc__ and __del__ methods are executed.
+    def _dealloc(self, _phil=_phil, warn=warnings.warn, registry=registry):
         with _phil:
-            IF DEBUG_ID:
-                print("DEALLOC - unregistering %d HDF5 id %d" % (self._pyid, self.id))
+            ### {{if OBJECTS_DEBUG_ID}}
+            print("DEALLOC - unregistering %d HDF5 id %d" % (self._pyid, self.id))
+            ### {{endif}}
             if is_h5py_obj_valid(self) and (not self.locked):
                 if H5Idec_ref(self.id) < 0:
-                    warnings.warn(
+                    warn(
                         "Reference counting issue with HDF5 id {}".format(
                             self.id
                         )
@@ -207,13 +241,13 @@ cdef class ObjectID:
             if self._pyid is not None:
                 del registry[self._pyid]
 
-
     def _close(self):
         """ Manually close this object. """
 
         with _phil:
-            IF DEBUG_ID:
-                print("CLOSE - %d HDF5 id %d" % (self._pyid, self.id))
+            ### {{if OBJECTS_DEBUG_ID}}
+            print("CLOSE - %d HDF5 id %d" % (self._pyid, self.id))
+            ### {{endif}}
             if is_h5py_obj_valid(self) and (not self.locked):
                 if H5Idec_ref(self.id) < 0:
                     warnings.warn(
@@ -229,7 +263,7 @@ cdef class ObjectID:
         # which have nonlocal effects should override this.
         self._close()
 
-    def __nonzero__(self):
+    def __bool__(self):
         return self.valid
 
     def __copy__(self):
@@ -296,7 +330,9 @@ cdef hid_t pdefault(ObjectID pid):
     return pid.id
 
 
-cdef int is_h5py_obj_valid(ObjectID obj):
+# Note: _phil=_phil allows this to work during interpreter shutdown.
+# Read note at ObjectID.__dealloc__.
+cdef int is_h5py_obj_valid(ObjectID obj, _phil=_phil):
     """
     Check that h5py object is valid, i.e. HDF5 object wrapper is valid and HDF5
     object is valid

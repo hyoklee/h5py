@@ -135,7 +135,7 @@ If the target is removed, they will "dangle":
 External links
 ~~~~~~~~~~~~~~
 
-New in HDF5 1.8, external links are "soft links plus", which allow you to
+External links are "soft links plus", which allow you to
 specify the name of the file as well as the path to the desired object.  You
 can refer to objects in any file you wish.  Use similar syntax as for soft
 links:
@@ -266,6 +266,20 @@ Reference
             >>> group.visit(find_foo)
             'some/subgroup/foo'
 
+        The traversal order is lexicographic, account taken of the division in
+        groups and subgroups::
+
+            >>> l = []
+            >>> group.visit(l.append)
+            >>> assert l == sorted(l, key=lambda x: x.split('/'))
+
+        The assertion in the above code fragment should never fail, since list
+        ``l`` is already sorted.
+
+        The traversal order is independent of the ``track_order`` parameter specified
+        when the objects were created (see :meth:`create_group` and
+        :meth:`create_dataset`).
+        All ``visit`` methods share this same fixed traversal order.
 
     .. method:: visititems(callable)
 
@@ -277,6 +291,19 @@ Reference
         In this case `object` will be a :class:`Group` or :class:`Dataset`
         instance.
 
+    .. method:: visit_links(callable)
+                visititems_links(callable)
+
+       These methods are like :meth:`visit` and :meth:`visititems`, but work on
+       the links in groups, rather than the objects those links point to. So if
+       you have two links pointing to the same object, these will 'see' both.
+       They also see soft & external links, which :meth:`visit` and
+       :meth:`visititems` ignore.
+
+       The second argument to the callback for ``visititems_links`` is an
+       instance of one of the :ref:`link classes <group_link_classes>`.
+
+       .. versionadded:: 3.11
 
     .. method:: move(source, dest)
 
@@ -368,6 +395,15 @@ Reference
 
         :keyword fillvalue: This value will be used when reading
                             uninitialized parts of the dataset.
+
+        :keyword fill_time: Control when to write the fill value. One of the
+            following choices: `alloc`, write fill value before writing
+            application data values or when the dataset is created; `never`,
+            never write fill value; `ifset`, write fill value if it is defined.
+            Default to `ifset`, which is the default of HDF5 library. If the
+            whole dataset is going to be written by the application, setting
+            this to `never` can avoid unnecessary writing of fill value and
+            potentially improve performance.
 
         :keyword track_times: Enable dataset creation timestamps (**T**/F).
 
@@ -516,6 +552,7 @@ Reference
 
         :class:`Group` instance containing this group.
 
+.. _group_link_classes:
 
 Link classes
 ------------

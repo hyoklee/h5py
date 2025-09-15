@@ -27,8 +27,6 @@ class TestLibver(TestCase):
         self.assertEqual((h5f.LIBVER_EARLIEST, h5f.LIBVER_LATEST),
                          plist.get_libver_bounds())
 
-    @ut.skipIf(version.hdf5_version_tuple < (1, 10, 2),
-               'Requires HDF5 1.10.2 or later')
     def test_libver_v18(self):
         """ Test libver bounds set/get for H5F_LIBVER_V18"""
         plist = h5p.create(h5p.FILE_ACCESS)
@@ -36,8 +34,6 @@ class TestLibver(TestCase):
         self.assertEqual((h5f.LIBVER_EARLIEST, h5f.LIBVER_V18),
                          plist.get_libver_bounds())
 
-    @ut.skipIf(version.hdf5_version_tuple < (1, 10, 2),
-               'Requires HDF5 1.10.2 or later')
     def test_libver_v110(self):
         """ Test libver bounds set/get for H5F_LIBVER_V110"""
         plist = h5p.create(h5p.FILE_ACCESS)
@@ -54,6 +50,25 @@ class TestLibver(TestCase):
         self.assertEqual((h5f.LIBVER_V18, h5f.LIBVER_V112),
                          plist.get_libver_bounds())
 
+    @ut.skipIf(version.hdf5_version_tuple < (1, 14, 0),
+               'Requires HDF5 1.14 or later')
+    def test_libver_v114(self):
+        """ Test libver bounds set/get for H5F_LIBVER_V114"""
+        plist = h5p.create(h5p.FILE_ACCESS)
+        plist.set_libver_bounds(h5f.LIBVER_V18, h5f.LIBVER_V114)
+        self.assertEqual((h5f.LIBVER_V18, h5f.LIBVER_V114),
+                         plist.get_libver_bounds())
+
+    @ut.skipIf(version.hdf5_version_tuple < (2, 0, 0),
+               'Requires HDF5 2.0 or later')
+    def test_libver_v200(self):
+        """ Test libver bounds set/get for H5F_LIBVER_V200"""
+        plist = h5p.create(h5p.FILE_ACCESS)
+        plist.set_libver_bounds(h5f.LIBVER_V18, h5f.LIBVER_V200)
+        self.assertEqual((h5f.LIBVER_V18, h5f.LIBVER_V200),
+                         plist.get_libver_bounds())
+
+
 class TestDA(TestCase):
     '''
     Feature: setting/getting chunk cache size on a dataset access property list
@@ -69,8 +84,6 @@ class TestDA(TestCase):
         self.assertEqual((nslots, nbytes, w0),
                          dalist.get_chunk_cache())
 
-    @ut.skipIf(version.hdf5_version_tuple < (1, 8, 17),
-               'Requires HDF5 1.8.17 or later')
     def test_efile_prefix(self):
         '''test get/set efile prefix '''
         dalist = h5p.create(h5p.DATASET_ACCESS)
@@ -86,8 +99,6 @@ class TestDA(TestCase):
         self.assertEqual(dalist.get_efile_prefix().decode(),
                          efile_prefix)
 
-    @ut.skipIf(version.hdf5_version_tuple < (1, 10, 2),
-               'Requires HDF5 1.10.2 or later')
     def test_virtual_prefix(self):
         '''test get/set virtual prefix '''
         dalist = h5p.create(h5p.DATASET_ACCESS)
@@ -120,10 +131,6 @@ class TestFA(TestCase):
         self.assertEqual((threshold, alignment),
                          falist.get_alignment())
 
-    @ut.skipUnless(
-        version.hdf5_version_tuple >= (1, 12, 1) or
-        (version.hdf5_version_tuple[:2] == (1, 10) and version.hdf5_version_tuple[2] >= 7),
-        'Requires HDF5 1.12.1 or later or 1.10.x >= 1.10.7')
     def test_set_file_locking(self):
         '''test get/set file locking'''
         falist = h5p.create(h5p.FILE_ACCESS)

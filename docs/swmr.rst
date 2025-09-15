@@ -37,7 +37,7 @@ creating the file.
 
 
 The HDF Group has documented the SWMR features in details on the website:
-`Single-Writer/Multiple-Reader (SWMR) Documentation <https://support.hdfgroup.org/HDF5/docNewFeatures/NewFeaturesSwmrDocs.html>`_.
+`Single-Writer/Multiple-Reader (SWMR) Documentation <https://support.hdfgroup.org/documentation/hdf5/latest/_s_w_m_r.html>`_.
 This is highly recommended reading for anyone intending to use the SWMR feature
 even through h5py. For production systems in particular pay attention to the
 file system requirements regarding POSIX I/O semantics.
@@ -78,7 +78,7 @@ The following snippet demonstrate how to monitor a dataset as a SWMR reader::
     f = h5py.File("swmr.h5", 'r', libver='latest', swmr=True)
     dset = f["data"]
     while True:
-        dset.id.refresh()
+        dset.refresh()
         shape = dset.shape
         print( shape )
 

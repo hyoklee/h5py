@@ -1,7 +1,7 @@
 New features
 ------------
 
-* New ``out`` argument to :func:`h5d.read_direct_chunk` to allow passing the output buffer.
+* <news item>
 
 Deprecations
 ------------
@@ -21,7 +21,8 @@ Bug fixes
 Building h5py
 -------------
 
-* <news item>
+* Deprecated Cython preproc macros (``DEF``, ``IF``, ``ELIF`` and ``ELSE``)
+  were replaced with build-time ``tempita``-based templating.
 
 Development
 -----------

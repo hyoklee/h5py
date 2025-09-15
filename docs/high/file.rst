@@ -96,15 +96,29 @@ of supported drivers and their options:
           Raw data filename extension. Default is '-r.h5'.
 
     'ros3'
-        Allows read-only access to HDF5 files in AWS S3 or S3 compatible object
-        stores. HDF5 file name must be one of \http://, \https://, or s3://
-        resource location. An s3:// location will be translated into an AWS
-        `path-style <https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#path-style-access>`_
-        location. Keywords:
+        Enables read-only access to HDF5 files in the `AWS S3
+        <https://aws.amazon.com/pm/serv-s3/>`_ or S3-compatible object stores.
+        HDF5 file name must be one of \http://, \https://, or s3:// resource
+        location. When h5py is using an HDF5 version before 2.0, it will
+        translate file's s3:// location into an AWS `path-style
+        <https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#path-style-access>`_
+        location. Starting from HDF5 2.0, h5py lets the library handle all three
+        forms of file locations.
+
+        .. note::
+          For HDF5 2.0 and later, the library searches all standard sources as
+          described in the `AWS documentation
+          <https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-authentication.html>`_
+          for keyword information. Use keywords only if their values differ from
+          those found, for example, if using temporary credentials or different
+          S3 bucket AWS region.
+
+        Keywords:
 
         aws_region:
           AWS region of the S3 bucket with the file, e.g. ``b"us-east-1"``.
-          Default is ``b''``. Required for s3:// locations.
+          Default is ``b''``. Required for s3:// locations if HDF5 before
+          2.0 is used.
 
         secret_id:
           AWS access key ID. Default is ``b''``.
@@ -112,16 +126,48 @@ of supported drivers and their options:
         secret_key:
           AWS secret access key. Default is ``b''``.
 
-        The argument values must be ``bytes`` objects. All three arguments are
-        required to activate AWS authentication.
+        session_token:
+          AWS temporary session token. Default is ``b''``.' Must be used
+          together with temporary secret_id and secret_key. Available from HDF5
+          1.14.2.
+
+        The argument values must be ``bytes`` objects. Arguments aws_region,
+        secret_id, and secret_key are required to activate AWS authentication.
 
         .. note::
-           Pre-built h5py packages on PyPI do not include this S3 support. If
-           you want this feature, you could use packages from conda-forge, or
-           :ref:`build h5py from source <source_install>` against an HDF5 build
-           with S3 support. Alternatively, use the :ref:`file-like object
-           <file_fileobj>` support with a package like s3fs.
+          Pre-built h5py packages on PyPI do not include ros3 driver support. If
+          you need this driver, you could use packages from conda-forge or
+          :ref:`build h5py from source <source_install>` against an HDF5 build
+          with ros3. Alternatively, use the :ref:`file-like object
+          <file_fileobj>` support with a package like s3fs. However, file-like
+          objects lack integration with the HDF5 library that improves performance
+          for cloud optimized HDF5 files. Configuring the file-like object, if
+          possible, with some of the file's settings prior to opening it could help.
 
+.. _file_in_memory:
+
+In-memory 'files'
+-----------------
+
+HDF5 can make a file in memory, without reading or writing a real file.
+To do this with h5py, use the :meth:`.File.in_memory` class method::
+
+    # Start a new HDF5 file in memory
+    f = h5py.File.in_memory()
+    f['a'] = [1, 2, 3]
+
+    # Get the file data as bytes, e.g. to send over the network
+    f.flush()
+    hdf_data = f.id.get_file_image()
+
+    # Turn the bytes back into an h5py File object
+    f2 = h5py.File.in_memory(hdf_data)
+
+This uses HDF5's "core" :ref:`file driver <file_driver>`, which is likely to
+cause fewer odd problems than asking HDF5 to call back into a Python ``BytesIO``
+object (:ref:`described below <file_fileobj>`).
+
+.. versionadded:: 3.13
 
 .. _file_fileobj:
 
@@ -212,9 +258,10 @@ compatible.
 
 The default is "earliest".
 
-Specifying version bounds has changed from HDF5 version 1.10.2. There are two new
-compatibility levels: `v108` (for HDF5 1.8) and `v110` (for HDF5 1.10). This
-change enables, for example, something like this:
+Specifying version bounds has changed from HDF5 version 1.10.2. There are now
+five compatibility levels: `v108` (for HDF5 1.8), `v110` (for HDF5 1.10), `v112`
+(for HDF5 1.12), `v114` (for HDF5 1.14), and `v200` (for HDF5 2.0). This change
+enables, for example, something like this:
 
     >>> f = h5py.File('name.hdf5', libver=('earliest', 'v108'))
 
@@ -343,7 +390,8 @@ The parameters controlling this behavior are prefixed by ``rdcc``, for *raw data
 chunk cache*. They apply to all datasets unless specifically changed for each one.
 
 * ``rdcc_nbytes`` sets the total size (measured in bytes) of the raw data chunk
-  cache for each dataset.  The default size is 1 MiB.
+  cache for each dataset. The default size is 1 MiB for HDF5 before 2.0 and 8
+  MiB for HDF5 2.0 and later.
   This should be set to the size of each chunk times the number of
   chunks that are likely to be needed in cache.
 * ``rdcc_w0`` sets the policy for chunks to be
@@ -378,7 +426,7 @@ chunk cache*. They apply to all datasets unless specifically changed for each on
   approximately 100 times that number of chunks. The default value is 521.
 
 Chunks and caching are described in greater detail in the `HDF5 documentation
-<https://portal.hdfgroup.org/display/HDF5/Chunking+in+HDF5>`_.
+<https://support.hdfgroup.org/documentation/hdf5-docs/advanced_topics/chunking_in_hdf5.html>`_.
 
 .. _file_alignment:
 
@@ -388,7 +436,7 @@ Data alignment
 When creating datasets within files, it may be advantageous to align the offset
 within the file itself. This can help optimize read and write times if the data
 become aligned with the underlying hardware, or may help with parallelism with
-MPI. Unfortunately, aligning small variables to large blocks can leave alot of
+MPI. Unfortunately, aligning small variables to large blocks can leave a lot of
 empty space in a file. To this effect, application developers are left with two
 options to tune the alignment of data within their file.  The two variables
 ``alignment_threshold`` and ``alignment_interval``  in the :class:`File`
@@ -397,7 +445,7 @@ takes effect and the alignment in bytes within the file. The alignment is
 measured from the end of the user block.
 
 For more information, see the official HDF5 documentation `H5P_SET_ALIGNMENT
-<https://portal.hdfgroup.org/display/HDF5/H5P_SET_ALIGNMENT>`_.
+<https://support.hdfgroup.org/documentation/hdf5/latest/group___f_a_p_l.html#gab99d5af749aeb3896fd9e3ceb273677a>`_.
 
 .. _file_meta_block_size:
 
@@ -411,8 +459,8 @@ number of regions. Setting a small value can reduce the overall file size,
 especially in combination with the ``libver`` option. This controls how the
 overall data and metadata are laid out within the file.
 
-For more information, see the offical HDF5 documentation `H5P_SET_META_BLOCK_SIZE
-<https://portal.hdfgroup.org/display/HDF5/H5P_SET_META_BLOCK_SIZE>`_.
+For more information, see the official HDF5 documentation `H5Pset_meta_block_size
+<https://support.hdfgroup.org/documentation/hdf5/latest/group___f_a_p_l.html#ga8822e3dedc8e1414f20871a87d533cb1>`_.
 
 Reference
 ---------
@@ -435,10 +483,9 @@ Reference
     listed below, :class:`File` objects inherit the full interface of
     :class:`Group`.
 
-    :param name:    Name of file (`bytes` or `str`), or an instance of
-                    :class:`h5f.FileID` to bind to an existing
-                    file identifier, or a file-like object
-                    (see :ref:`file_fileobj`).
+    :param name:    Name of file (`os.PathLike[str]`, `bytes` or `str`), or an
+                    instance of :class:`h5f.FileID` to bind to an existing file
+                    identifier, or a file-like object (see :ref:`file_fileobj`).
     :param mode:    Mode in which to open file; one of
                     ("w", "r", "r+", "a", "w-").  See :ref:`file_open`.
     :param driver:  File driver to use; see :ref:`file_driver`.
@@ -493,7 +540,7 @@ Reference
             Only available with HDF5 >= 1.12.1 or 1.10.x >= 1.10.7.
     :param alignment_threshold: Together with ``alignment_interval``, this
             property ensures that any file object greater than or equal
-            in size to the alignement threshold (in bytes) will be
+            in size to the alignment threshold (in bytes) will be
             aligned on an address which is a multiple of alignment interval.
     :param alignment_interval: This property should be used in conjunction with
             ``alignment_threshold``. See the description above. For more
@@ -501,6 +548,15 @@ Reference
     :param meta_block_size: Determines the current minimum size, in bytes, of
             new metadata block allocations. See :ref:`file_meta_block_size`.
     :param kwds:    Driver-specific keywords; see :ref:`file_driver`.
+
+    .. classmethod:: in_memory(file_image=None, block_size=64*1024, **kwargs)
+
+        :param file_image: The initial file contents as bytes (or anything that
+            supports the Python buffer interface). HDF5 takes a copy of this data.
+        :param block_size: Chunk size for new memory alloactions (default 64 KiB).
+
+        Other keyword arguments are like :class:`File`, although name, mode,
+        driver and locking can't be passed.
 
     .. method:: __bool__()
 
@@ -557,4 +613,4 @@ Reference
     .. attribute:: meta_block_size
 
         Minimum size, in bytes, of metadata block allocations. Default: 2048.
-        See :ref`file_meta_block_size`.
+        See :ref:`file_meta_block_size`.

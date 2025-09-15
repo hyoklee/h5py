@@ -3,7 +3,6 @@
 set -e -x
 
 PROJECT_ROOT="$(pwd)"
-source "$PROJECT_ROOT/ci/configure_hdf5_mac.sh"
 
 if [ -z ${HDF5_DIR+x} ]; then
     echo "Using OS HDF5"
@@ -34,46 +33,52 @@ else
     else
         echo "building HDF5"
 
-        MINOR_V=${HDF5_VERSION#*.}
-        MINOR_V=${MINOR_V%.*}
-        MAJOR_V=${HDF5_VERSION/%.*.*}
+        IFS='.-' read MAJOR_V MINOR_V REL_V PATCH_V <<< "$HDF5_VERSION"
+        # the assets in GitHub (currently) have two naming conventions
+        if [[ -n "${PATCH_V}" ]]; then
+            ASSET_FMT1="hdf5-${MAJOR_V}_${MINOR_V}_${REL_V}-${PATCH_V}"
+            ASSET_FMT2="hdf5_${MAJOR_V}.${MINOR_V}.${REL_V}.${PATCH_V}"
+        else
+            ASSET_FMT1="hdf5-${MAJOR_V}_${MINOR_V}_${REL_V}"
+            ASSET_FMT2="hdf5_${MAJOR_V}.${MINOR_V}.${REL_V}"
+        fi
+
         if [[ $MAJOR_V -gt 1 || $MINOR_V -ge 12 ]]; then
             BUILD_MODE="--enable-build-mode=production"
         fi
 
         if [[ "$OSTYPE" == "darwin"* ]]; then
-            set_compiler_vars "$CIBW_ARCHS_MACOS"
-            build_zlib
+            ARCH=$(uname -m)
+            ZLIB_VERSION="1.3.1"
+
+            pushd /tmp
+            curl -sLO https://zlib.net/fossils/zlib-$ZLIB_VERSION.tar.gz
+            tar xzf zlib-$ZLIB_VERSION.tar.gz
+            cd zlib-$ZLIB_VERSION
+            ./configure --prefix="$HDF5_DIR"
+            make
+            make install
+            popd
 
             export LD_LIBRARY_PATH="$HDF5_DIR/lib:${LD_LIBRARY_PATH}"
             export PKG_CONFIG_PATH="$HDF5_DIR/lib/pkgconfig:${PKG_CONFIG_PATH}"
             ZLIB_ARG="--with-zlib=$HDF5_DIR"
-            if [[ "$CIBW_ARCHS_MACOS" = "arm64"  ]]; then
-                HOST_ARG="--host=aarch64-apple-darwin"
-            fi
         fi
 
         pushd /tmp
-        #                                   Remove trailing .*, to get e.g. '1.12' ↓
-        curl -fsSLO "https://www.hdfgroup.org/ftp/HDF5/releases/hdf5-$MAJOR_V.$MINOR_V/hdf5-$HDF5_VERSION/src/hdf5-$HDF5_VERSION.tar.gz"
-        tar -xzvf hdf5-$HDF5_VERSION.tar.gz
-        pushd hdf5-$HDF5_VERSION
+        url_base="https://github.com/HDFGroup/hdf5/archive/refs/tags/"
+        curl -fsSL -o "hdf5-$HDF5_VERSION.tar.gz" "${url_base}${ASSET_FMT1}.tar.gz" || curl -fsSL -o "hdf5-$HDF5_VERSION.tar.gz" "${url_base}${ASSET_FMT2}.tar.gz"
 
-        if [[ "$OSTYPE" == "darwin"* && "$CIBW_ARCHS_MACOS" = "arm64"  ]]; then
-            patch_hdf5 "$PROJECT_ROOT"
-        fi
+        mkdir -p hdf5-$HDF5_VERSION && tar -xzvf hdf5-$HDF5_VERSION.tar.gz --strip-components=1 -C hdf5-$HDF5_VERSION
+
+        pushd hdf5-$HDF5_VERSION
 
         ./configure --prefix="$HDF5_DIR" \
             ${ZLIB_ARG} \
             ${EXTRA_MPI_FLAGS} \
             ${BUILD_MODE} \
             ${ENABLE_DIRECT_VFD} \
-            ${HOST_ARG} \
             --enable-tests=no
-
-        if [[ "$OSTYPE" == "darwin"* && "$CIBW_ARCHS_MACOS" = "arm64"  ]]; then
-            build_h5detect
-        fi
 
         make -j "$NPROC"
         make install

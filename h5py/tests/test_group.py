@@ -20,7 +20,6 @@
 import numpy as np
 import os
 import os.path
-import sys
 from tempfile import mkdtemp
 
 from collections.abc import MutableMapping
@@ -93,6 +92,11 @@ class TestCreate(BaseGroup):
         group = self.f.create_group(name)
         self.assertEqual(group.name, name)
         self.assertEqual(group.id.links.get_info(name.encode('utf8')).cset, h5t.CSET_ASCII)
+
+    def test_type(self):
+        """ Names should be strings or bytes """
+        with self.assertRaises(TypeError):
+            self.f.create_group(1.)
 
     def test_appropriate_low_level_id(self):
         " Binding a group to a non-group identifier fails with ValueError "
@@ -687,10 +691,142 @@ class TestVisit(TestCase):
 
     def test_bailout(self):
         """ Returning a non-None value immediately aborts iteration """
-        x = self.f.visit(lambda x: x)
-        self.assertEqual(x, self.groups[0])
-        x = self.f.visititems(lambda x, y: (x,y))
-        self.assertEqual(x, (self.groups[0], self.f[self.groups[0]]))
+        # do not make assumption on iteration order
+        l = []
+        x = self.f.visit(lambda x: l.append(x) or -1)
+        assert x == -1 and len(l) == 1 and l[0] in self.groups
+
+        l = []
+        comp = [(x, self.f[x]) for x in self.groups]
+        x = self.f.visititems(lambda x, y: l.append((x,y)) or -1)
+        assert x == -1 and len(l) == 1 and l[0] in comp
+
+class TestVisitLinks(TestCase):
+    """
+        Feature: The .visit_links and .visititems_links methods allow iterative access to
+        links contained in the group and its subgroups.
+    """
+
+    def setUp(self):
+        self.f = File(self.mktemp(), 'w')
+        self.groups = [
+            'grp1', 'grp1/grp11', 'grp1/grp12', 'grp2', 'grp2/grp21', 'grp2/grp21/grp211'
+            ]
+        self.links = [
+            'linkto_grp1', 'grp1/linkto_grp11', 'grp1/linkto_grp12', 'linkto_grp2', 'grp2/linkto_grp21', 'grp2/grp21/linkto_grp211'
+        ]
+        for g, l in zip(self.groups, self.links):
+            self.f.create_group(g)
+            self.f[l] = SoftLink(f'/{g}')
+
+    def tearDown(self):
+        self.f.close()
+
+    def test_visit_links(self):
+        """ All subgroups and links are visited """
+        l = []
+        self.f.visit_links(l.append)
+        self.assertSameElements(l, self.groups + self.links)
+
+    def test_visititems(self):
+        """ All links are visited """
+        l = []
+        comp = [(x, type(self.f.get(x, getlink=True))) for x in self.groups + self.links]
+        self.f.visititems_links(lambda x, y: l.append((x, type(y))))
+        self.assertSameElements(comp, l)
+
+    def test_bailout(self):
+        """ Returning a non-None value immediately aborts iteration """
+        # do not make assumption on iteration order
+        l = []
+        x = self.f.visit_links(lambda x: l.append(x) or -1)
+        assert x == -1 and len(l) == 1
+
+        l = []
+        x = self.f.visititems_links(lambda x, y: l.append((x,y)) or -1)
+        assert x == -1 and len(l) == 1
+
+class Visitor:
+    """ Class for exercise 'visit' and 'visititems' methods """
+
+    def __init__(self):
+        self._names = []
+
+    def __call__(self, name, obj=None):
+        self._names.append(name)
+
+    @property
+    def names(self):
+        return self._names
+
+class TestLexicographic(TestCase):
+    """ Test ascending lexicographic order traversal of the 'visit*' methods.
+
+        This semantics is set by the following default args in
+        h5py.h5o.visit(..., idx_type=H5_INDEX_NAME, order=H5_ITER_INC, ...)
+        h5py.h5l.visit(..., idx_type=H5_INDEX_NAME, order=H5_ITER_INC, ...)
+    """
+
+    import operator
+    split_parts = operator.methodcaller('split', '/')
+
+    def setUp(self):
+        """ Populate example hdf5 file, with track_order=True """
+
+        self.f = File(self.mktemp(), 'w-', track_order=True)
+        self.f.create_dataset('b', (10,))
+
+        grp = self.f.create_group('B', track_order=True)
+        grp.create_dataset('b', (10,))
+        grp.create_dataset('a', (10,))
+
+        grp = self.f.create_group('z', track_order=True)
+        grp.create_dataset('b', (10,))
+        grp.create_dataset('a', (10,))
+
+        self.f.create_dataset('a', (10,))
+        # note that 'z-' < 'z/...' but traversal order is ['z', 'z/...', 'z-']
+        self.f.create_dataset('z-', (10,))
+
+        # create some links
+        self.f['A/x'] = self.f['B/b']
+        self.f['y'] = self.f['z/a']
+        self.f['A$'] = self.f['y']
+        self.f['A/B/C'] = self.f['A']
+        self.f['A/a'] = self.f['A']
+
+        # create vistor
+        self.v = Visitor()
+
+    def test_nontrivial_sort_visit(self):
+        """check that test example is not trivially sorted"""
+        self.f.visit(self.v)
+        assert self.v.names != sorted(self.v.names)
+
+    def test_visit(self):
+        """check that File.visit iterates in lexicographic order"""
+        self.f.visit(self.v)
+        assert self.v.names == sorted(self.v.names, key=self.split_parts)
+
+    def test_visit_links(self):
+        """check that File.visit_links iterates in lexicographic order"""
+        self.f.visit_links(self.v)
+        assert self.v.names == sorted(self.v.names, key=self.split_parts)
+
+    def test_visititems(self):
+        """check that File.visititems iterates in lexicographic order"""
+        self.f.visititems(self.v)
+        assert self.v.names == sorted(self.v.names, key=self.split_parts)
+
+    def test_visititems_links(self):
+        """check that File.visititems_links iterates in lexicographic order"""
+        self.f.visititems_links(self.v)
+        assert self.v.names == sorted(self.v.names, key=self.split_parts)
+
+    def test_visit_group(self):
+        """check that Group.visit iterates in lexicographic order"""
+        self.f['A'].visit(self.v)
+        assert self.v.names == sorted(self.v.names, key=self.split_parts)
 
 class TestSoftLinks(BaseGroup):
 
@@ -766,7 +902,7 @@ class TestExternalLinks(TestCase):
         with self.assertRaises(KeyError):
             self.f['ext']
 
-    # I would prefer IOError but there's no way to fix this as the exception
+    # I would prefer OSError but there's no way to fix this as the exception
     # class is determined by HDF5.
     def test_exc_missingfile(self):
         """ KeyError raised when attempting to open missing file """
@@ -839,7 +975,7 @@ class TestExtLinkBugs(TestCase):
                 try:
                     if x:
                         x.close()
-                except IOError:
+                except OSError:
                     pass
             return w
         orig_name = self.mktemp()
@@ -871,8 +1007,6 @@ class TestCopy(TestCase):
         if self.f2:
             self.f2.close()
 
-    @ut.skipIf(h5py.version.hdf5_version_tuple < (1,8,9),
-               "Bug in HDF5<1.8.8 prevents copying open dataset")
     def test_copy_path_to_path(self):
         foo = self.f1.create_group('foo')
         foo['bar'] = [1,2,3]
@@ -882,8 +1016,6 @@ class TestCopy(TestCase):
         self.assertIsInstance(baz, Group)
         self.assertArrayEqual(baz['bar'], np.array([1,2,3]))
 
-    @ut.skipIf(h5py.version.hdf5_version_tuple < (1,8,9),
-               "Bug in HDF5<1.8.8 prevents copying open dataset")
     def test_copy_path_to_group(self):
         foo = self.f1.create_group('foo')
         foo['bar'] = [1,2,3]
@@ -898,8 +1030,6 @@ class TestCopy(TestCase):
         self.assertIsInstance(self.f2['/foo'], Group)
         self.assertArrayEqual(self.f2['foo/bar'], np.array([1,2,3]))
 
-    @ut.skipIf(h5py.version.hdf5_version_tuple < (1,8,9),
-               "Bug in HDF5<1.8.8 prevents copying open dataset")
     def test_copy_group_to_path(self):
 
         foo = self.f1.create_group('foo')
@@ -914,8 +1044,6 @@ class TestCopy(TestCase):
         self.assertIsInstance(self.f2['/foo'], Group)
         self.assertArrayEqual(self.f2['foo/bar'], np.array([1,2,3]))
 
-    @ut.skipIf(h5py.version.hdf5_version_tuple < (1,8,9),
-               "Bug in HDF5<1.8.8 prevents copying open dataset")
     def test_copy_group_to_group(self):
 
         foo = self.f1.create_group('foo')
@@ -931,8 +1059,6 @@ class TestCopy(TestCase):
         self.assertIsInstance(self.f2['/foo'], Group)
         self.assertArrayEqual(self.f2['foo/bar'], np.array([1,2,3]))
 
-    @ut.skipIf(h5py.version.hdf5_version_tuple < (1,8,9),
-               "Bug in HDF5<1.8.8 prevents copying open dataset")
     def test_copy_dataset(self):
         self.f1['foo'] = [1,2,3]
         foo = self.f1['foo']
@@ -953,8 +1079,6 @@ class TestCopy(TestCase):
         self.f2.copy(self.f1['foo'], self.f2, 'bar')
         self.assertArrayEqual(self.f2['bar'], np.array([1,2,3]))
 
-    @ut.skipIf(h5py.version.hdf5_version_tuple < (1,8,9),
-               "Bug in HDF5<1.8.8 prevents copying open dataset")
     def test_copy_shallow(self):
 
         foo = self.f1.create_group('foo')
@@ -975,8 +1099,6 @@ class TestCopy(TestCase):
         self.assertEqual(len(self.f2['foo/bar']), 0)
         self.assertArrayEqual(self.f2['foo/qux'], np.array([1,2,3]))
 
-    @ut.skipIf(h5py.version.hdf5_version_tuple < (1,8,9),
-               "Bug in HDF5<1.8.8 prevents copying open dataset")
     def test_copy_without_attributes(self):
 
         self.f1['foo'] = [1,2,3]
@@ -991,8 +1113,6 @@ class TestCopy(TestCase):
         self.assertArrayEqual(self.f2['baz'], np.array([1,2,3]))
         assert 'bar' not in self.f2['baz'].attrs
 
-    @ut.skipIf(h5py.version.hdf5_version_tuple < (1,8,9),
-               "Bug in HDF5<1.8.8 prevents copying open dataset")
     def test_copy_soft_links(self):
 
         self.f1['bar'] = [1, 2, 3]
@@ -1009,8 +1129,6 @@ class TestCopy(TestCase):
         self.assertIsInstance(self.f2['/foo'], Group)
         self.assertArrayEqual(self.f2['foo/baz'], np.array([1, 2, 3]))
 
-    @ut.skipIf(h5py.version.hdf5_version_tuple < (1,8,9),
-               "Bug in HDF5<1.8.8 prevents copying open dataset")
     def test_copy_external_links(self):
 
         filename = self.f1.filename
@@ -1025,8 +1143,6 @@ class TestCopy(TestCase):
         os.unlink(filename)
         self.assertArrayEqual(self.f2['baz'], np.array([1,2,3]))
 
-    @ut.skipIf(h5py.version.hdf5_version_tuple < (1,8,9),
-               "Bug in HDF5<1.8.8 prevents copying open dataset")
     def test_copy_refs(self):
 
         self.f1['foo'] = [1,2,3]

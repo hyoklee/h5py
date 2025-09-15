@@ -9,15 +9,8 @@
 
 import pytest
 
-import h5py
 from h5py import h5pl
 from h5py.tests.common import insubprocess, subproc_env
-
-
-# pytestmark is a special name - the skipif marker applies to the whole file
-pytestmark = pytest.mark.skipif(
-    h5py.version.hdf5_version_tuple < (1, 10, 1), reason='HDF5 1.10.1+ required'
-)
 
 
 @pytest.mark.mpi_skip
@@ -69,6 +62,7 @@ def test_replace(request):
 
 @pytest.mark.mpi_skip
 @insubprocess
+@subproc_env({'HDF5_PLUGIN_PATH': 'h5py_plugin_test'})
 def test_remove(request):
     h5pl.remove(0)
     assert h5pl.size() == 0

@@ -7,7 +7,6 @@
 # License:  Standard 3-clause BSD; see "license.txt" for full license terms
 #           and contributor agreement.
 
-include "config.pxi"
 
 """
     Identifier interface for object inspection.
@@ -18,14 +17,18 @@ from ._objects import phil, with_phil
 
 # === Public constants and data structures ====================================
 
+INVALID_HID = H5I_INVALID_HID
 BADID       = H5I_BADID
 FILE        = H5I_FILE
 GROUP       = H5I_GROUP
 DATASPACE   = H5I_DATASPACE
 DATASET     = H5I_DATASET
 ATTR        = H5I_ATTR
-IF HDF5_VERSION < VOL_MIN_HDF5_VERSION:
-  REFERENCE   = H5I_REFERENCE
+
+### {{if HDF5_VERSION < VOL_MIN_HDF5_VERSION}}
+REFERENCE   = H5I_REFERENCE
+### {{endif}}
+
 GENPROP_CLS = H5I_GENPROP_CLS
 GENPROP_LST = H5I_GENPROP_LST
 DATATYPE    = H5I_DATATYPE

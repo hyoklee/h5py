@@ -11,8 +11,6 @@
     Low-level operations on HDF5 file objects.
 """
 
-include "config.pxi"
-
 # C level imports
 from cpython.buffer cimport PyObject_CheckBuffer, \
                             PyObject_GetBuffer, PyBuffer_Release, \
@@ -26,7 +24,7 @@ from .utils cimport emalloc, efree
 # Python level imports
 from collections import namedtuple
 import gc
-from . import _objects
+from . import _objects, h5o
 from ._objects import phil, with_phil
 
 from cpython.bytes cimport PyBytes_FromStringAndSize, PyBytes_AsString
@@ -39,18 +37,17 @@ ACC_TRUNC   = H5F_ACC_TRUNC
 ACC_EXCL    = H5F_ACC_EXCL
 ACC_RDWR    = H5F_ACC_RDWR
 ACC_RDONLY  = H5F_ACC_RDONLY
-IF HDF5_VERSION >= SWMR_MIN_HDF5_VERSION:
-    ACC_SWMR_WRITE = H5F_ACC_SWMR_WRITE
-    ACC_SWMR_READ  = H5F_ACC_SWMR_READ
+ACC_SWMR_WRITE = H5F_ACC_SWMR_WRITE
+ACC_SWMR_READ  = H5F_ACC_SWMR_READ
 
 
 SCOPE_LOCAL     = H5F_SCOPE_LOCAL
 SCOPE_GLOBAL    = H5F_SCOPE_GLOBAL
 
+CLOSE_DEFAULT = H5F_CLOSE_DEFAULT
 CLOSE_WEAK  = H5F_CLOSE_WEAK
 CLOSE_SEMI  = H5F_CLOSE_SEMI
 CLOSE_STRONG = H5F_CLOSE_STRONG
-CLOSE_DEFAULT = H5F_CLOSE_DEFAULT
 
 OBJ_FILE    = H5F_OBJ_FILE
 OBJ_DATASET = H5F_OBJ_DATASET
@@ -63,28 +60,31 @@ UNLIMITED   = H5F_UNLIMITED
 
 LIBVER_EARLIEST = H5F_LIBVER_EARLIEST
 LIBVER_LATEST = H5F_LIBVER_LATEST
-IF HDF5_VERSION >= (1, 10, 2):
-    LIBVER_V18 = H5F_LIBVER_V18
-    LIBVER_V110 = H5F_LIBVER_V110
+LIBVER_V18 = H5F_LIBVER_V18
+LIBVER_V110 = H5F_LIBVER_V110
 
-IF HDF5_VERSION >= VOL_MIN_HDF5_VERSION:
-    LIBVER_V112 = H5F_LIBVER_V112
+### {{if HDF5_VERSION >= VOL_MIN_HDF5_VERSION}}
+LIBVER_V112 = H5F_LIBVER_V112
+### {{endif}}
 
-IF HDF5_VERSION >= (1, 13, 0):
-    LIBVER_V114 = H5F_LIBVER_V114
+### {{if HDF5_VERSION >= (1, 13, 0)}}
+LIBVER_V114 = H5F_LIBVER_V114
+### {{endif}}
 
-if HDF5_VERSION >= (1, 8, 9):
-    FILE_IMAGE_OPEN_RW = H5LT_FILE_IMAGE_OPEN_RW
+### {{if HDF5_VERSION >= (2, 0, 0)}}
+LIBVER_V200 = H5F_LIBVER_V200
+### {{endif}}
 
-IF HDF5_VERSION >= (1, 10, 1):
-    FSPACE_STRATEGY_FSM_AGGR = H5F_FSPACE_STRATEGY_FSM_AGGR
-    FSPACE_STRATEGY_PAGE = H5F_FSPACE_STRATEGY_PAGE
-    FSPACE_STRATEGY_AGGR = H5F_FSPACE_STRATEGY_AGGR
-    FSPACE_STRATEGY_NONE = H5F_FSPACE_STRATEGY_NONE
+FILE_IMAGE_OPEN_RW = H5LT_FILE_IMAGE_OPEN_RW
 
-    # Used in FileID.get_page_buffering_stats()
-    PageBufStats = namedtuple('PageBufferStats', ['meta', 'raw'])
-    PageStats = namedtuple('PageStats', ['accesses', 'hits', 'misses', 'evictions', 'bypasses'])
+FSPACE_STRATEGY_FSM_AGGR = H5F_FSPACE_STRATEGY_FSM_AGGR
+FSPACE_STRATEGY_PAGE = H5F_FSPACE_STRATEGY_PAGE
+FSPACE_STRATEGY_AGGR = H5F_FSPACE_STRATEGY_AGGR
+FSPACE_STRATEGY_NONE = H5F_FSPACE_STRATEGY_NONE
+
+# Used in FileID.get_page_buffering_stats()
+PageBufStats = namedtuple('PageBufferStats', ['meta', 'raw'])
+PageStats = namedtuple('PageStats', ['accesses', 'hits', 'misses', 'evictions', 'bypasses'])
 
 
 # === File operations =========================================================
@@ -125,26 +125,25 @@ def create(char* name, int flags=H5F_ACC_TRUNC, PropFCID fcpl=None,
     """
     return FileID(H5Fcreate(name, flags, pdefault(fcpl), pdefault(fapl)))
 
-IF HDF5_VERSION >= (1, 8, 9):
-    @with_phil
-    def open_file_image(image, flags=0):
-        """(STRING image, INT flags=0) => FileID
+@with_phil
+def open_file_image(image, flags=0):
+    """(STRING image, INT flags=0) => FileID
 
-        Load a new HDF5 file into memory.  Keyword "flags" may be:
+    Load a new HDF5 file into memory.  Keyword "flags" may be:
 
-        FILE_IMAGE_OPEN_RW
-            Specifies opening the file image in read/write mode.
-        """
-        cdef Py_buffer buf
+    FILE_IMAGE_OPEN_RW
+        Specifies opening the file image in read/write mode.
+    """
+    cdef Py_buffer buf
 
-        if not PyObject_CheckBuffer(image):
-            raise TypeError("image must support the buffer protocol")
+    if not PyObject_CheckBuffer(image):
+        raise TypeError("image must support the buffer protocol")
 
-        PyObject_GetBuffer(image, &buf, PyBUF_SIMPLE)
-        try:
-            return FileID(H5LTopen_file_image(buf.buf, buf.len, flags))
-        finally:
-            PyBuffer_Release(&buf)
+    PyObject_GetBuffer(image, &buf, PyBUF_SIMPLE)
+    try:
+        return FileID(H5LTopen_file_image(buf.buf, buf.len, flags))
+    finally:
+        PyBuffer_Release(&buf)
 
 
 @with_phil
@@ -322,11 +321,11 @@ cdef class FileID(GroupID):
         * Equality: Hash comparison
     """
 
-    property name:
+    @property
+    def name(self):
         """ File name on disk (according to h5f.get_name()) """
-        def __get__(self):
-            with phil:
-                return get_name(self)
+        with phil:
+            return get_name(self)
 
 
     @with_phil
@@ -444,54 +443,50 @@ cdef class FileID(GroupID):
         H5Fget_vfd_handle(self.id, pdefault(fapl), <void**>&handle)
         return handle[0]
 
-    IF HDF5_VERSION >= (1, 8, 9):
+    @with_phil
+    def get_file_image(self):
+        """ () => BYTES
 
-        @with_phil
-        def get_file_image(self):
-            """ () => BYTES
+        Retrieves a copy of the image of an existing, open file.
+        """
 
-            Retrieves a copy of the image of an existing, open file.
+        cdef ssize_t size
 
-            Feature requires: 1.8.9
-            """
+        size = H5Fget_file_image(self.id, NULL, 0)
+        image = PyBytes_FromStringAndSize(NULL, size)
 
-            cdef ssize_t size
+        H5Fget_file_image(self.id, PyBytes_AsString(image), size)
 
-            size = H5Fget_file_image(self.id, NULL, 0)
-            image = PyBytes_FromStringAndSize(NULL, size)
+        return image
 
-            H5Fget_file_image(self.id, PyBytes_AsString(image), size)
+    ### {{if MPI}}
+    @with_phil
+    def set_mpi_atomicity(self, bint atomicity):
+        """ (BOOL atomicity)
 
-            return image
+        For MPI-IO driver, set to atomic (True), which guarantees sequential
+        I/O semantics, or non-atomic (False), which improves  performance.
 
-    IF MPI and HDF5_VERSION >= (1, 8, 9):
+        Default is False.
 
-        @with_phil
-        def set_mpi_atomicity(self, bint atomicity):
-            """ (BOOL atomicity)
-
-            For MPI-IO driver, set to atomic (True), which guarantees sequential
-            I/O semantics, or non-atomic (False), which improves  performance.
-
-            Default is False.
-
-            Feature requires: 1.8.9 and Parallel HDF5
-            """
-            H5Fset_mpi_atomicity(self.id, <hbool_t>atomicity)
+        Feature requires: Parallel HDF5
+        """
+        H5Fset_mpi_atomicity(self.id, <hbool_t>atomicity)
 
 
-        @with_phil
-        def get_mpi_atomicity(self):
-            """ () => BOOL
+    @with_phil
+    def get_mpi_atomicity(self):
+        """ () => BOOL
 
-            Return atomicity setting for MPI-IO driver.
+        Return atomicity setting for MPI-IO driver.
 
-            Feature requires: 1.8.9 and Parallel HDF5
-            """
-            cdef hbool_t atom
+        Feature requires: Parallel HDF5
+        """
+        cdef hbool_t atom
 
-            H5Fget_mpi_atomicity(self.id, &atom)
-            return <bint>atom
+        H5Fget_mpi_atomicity(self.id, &atom)
+        return <bint>atom
+    ### {{endif}}
 
 
     @with_phil
@@ -558,69 +553,79 @@ cdef class FileID(GroupID):
         # I feel this should have some sanity checking to make sure that
         H5Fset_mdc_config(self.id, &config.cache_config)
 
-    IF HDF5_VERSION >= SWMR_MIN_HDF5_VERSION:
+    @with_phil
+    def start_swmr_write(self):
+        """ no return
 
-        @with_phil
-        def start_swmr_write(self):
-            """ no return
+        Enables SWMR writing mode for a file.
 
-            Enables SWMR writing mode for a file.
+        This function will activate SWMR writing mode for a file associated
+        with file_id. This routine will prepare and ensure the file is safe
+        for SWMR writing as follows:
 
-            This function will activate SWMR writing mode for a file associated
-            with file_id. This routine will prepare and ensure the file is safe
-            for SWMR writing as follows:
+            * Check that the file is opened with write access (H5F_ACC_RDWR).
+            * Check that the file is opened with the latest library format
+              to ensure data structures with check-summed metadata are used.
+            * Check that the file is not already marked in SWMR writing mode.
+            * Enable reading retries for check-summed metadata to remedy
+              possible checksum failures from reading inconsistent metadata
+              on a system that is not atomic.
+            * Turn off usage of the library’s accumulator to avoid possible
+              ordering problem on a system that is not atomic.
+            * Perform a flush of the file’s data buffers and metadata to set
+              a consistent state for starting SWMR write operations.
 
-                * Check that the file is opened with write access (H5F_ACC_RDWR).
-                * Check that the file is opened with the latest library format
-                  to ensure data structures with check-summed metadata are used.
-                * Check that the file is not already marked in SWMR writing mode.
-                * Enable reading retries for check-summed metadata to remedy
-                  possible checksum failures from reading inconsistent metadata
-                  on a system that is not atomic.
-                * Turn off usage of the library’s accumulator to avoid possible
-                  ordering problem on a system that is not atomic.
-                * Perform a flush of the file’s data buffers and metadata to set
-                  a consistent state for starting SWMR write operations.
+        Library objects are groups, datasets, and committed datatypes. For
+        the current implementation, groups and datasets can remain open when
+        activating SWMR writing mode, but not committed datatypes. Attributes
+        attached to objects cannot remain open.
 
-            Library objects are groups, datasets, and committed datatypes. For
-            the current implementation, groups and datasets can remain open when
-            activating SWMR writing mode, but not committed datatypes. Attributes
-            attached to objects cannot remain open.
+        Feature requires: 1.9.178 HDF5
+        """
+        H5Fstart_swmr_write(self.id)
 
-            Feature requires: 1.9.178 HDF5
-            """
-            H5Fstart_swmr_write(self.id)
+    @with_phil
+    def reset_page_buffering_stats(self):
+        """ ()
 
-    IF HDF5_VERSION >= (1, 10, 1):
+        Reset page buffer statistics for the file.
+        """
+        H5Freset_page_buffering_stats(self.id)
 
-        @with_phil
-        def reset_page_buffering_stats(self):
-            """ ()
+    @with_phil
+    def get_page_buffering_stats(self):
+        """ () -> NAMEDTUPLE PageBufStats(NAMEDTUPLE meta=PageStats, NAMEDTUPLE raw=PageStats)
 
-            Reset page buffer statistics for the file.
-            """
-            H5Freset_page_buffering_stats(self.id)
+        Retrieve page buffering statistics for the file as the number of
+        metadata and raw data accesses, hits, misses, evictions, and
+        accesses that bypass the page buffer (bypasses).
+        """
+        cdef:
+            unsigned int accesses[2]
+            unsigned int hits[2]
+            unsigned int misses[2]
+            unsigned int evictions[2]
+            unsigned int bypasses[2]
 
-        @with_phil
-        def get_page_buffering_stats(self):
-            """ () -> NAMEDTUPLE PageBufStats(NAMEDTUPLE meta=PageStats, NAMEDTUPLE raw=PageStats)
+        H5Fget_page_buffering_stats(self.id, &accesses[0], &hits[0],
+                                    &misses[0], &evictions[0], &bypasses[0])
+        meta = PageStats(int(accesses[0]), int(hits[0]), int(misses[0]),
+                         int(evictions[0]), int(bypasses[0]))
+        raw = PageStats(int(accesses[1]), int(hits[1]), int(misses[1]),
+                        int(evictions[1]), int(bypasses[1]))
 
-            Retrieve page buffering statistics for the file as the number of
-            metadata and raw data accesses, hits, misses, evictions, and
-            accesses that bypass the page buffer (bypasses).
-            """
-            cdef:
-                unsigned int accesses[2]
-                unsigned int hits[2]
-                unsigned int misses[2]
-                unsigned int evictions[2]
-                unsigned int bypasses[2]
+        return PageBufStats(meta, raw)
 
-            H5Fget_page_buffering_stats(self.id, &accesses[0], &hits[0],
-                                        &misses[0], &evictions[0], &bypasses[0])
-            meta = PageStats(int(accesses[0]), int(hits[0]), int(misses[0]),
-                             int(evictions[0]), int(bypasses[0]))
-            raw = PageStats(int(accesses[1]), int(hits[1]), int(misses[1]),
-                            int(evictions[1]), int(bypasses[1]))
+    # === Special methods =====================================================
 
-            return PageBufStats(meta, raw)
+    # Redefine these methods to use the root group explicitly, because otherwise
+    # the setting for link order tracking can be missed.
+    @with_phil
+    def __iter__(self):
+        """ Return an iterator over the names of group members. """
+        return iter(h5o.open(self, b'/'))
+
+    @with_phil
+    def __reversed__(self):
+        """ Return an iterator over group member names in reverse order. """
+        return reversed(h5o.open(self, b'/'))

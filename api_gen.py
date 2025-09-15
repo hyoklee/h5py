@@ -25,7 +25,23 @@
 """
 
 import re
-import os.path as op
+import os
+from hashlib import md5
+from pathlib import Path
+from setup_configure import BuildConfig
+
+
+def replace_or_remove(new: Path) -> None:
+    assert new.is_file()
+    assert new.suffix == '.new'
+    old = new.with_suffix('')
+    def get_hash(p: Path) -> str:
+        return md5(p.read_bytes()).hexdigest()
+
+    if not old.exists() or get_hash(new) != get_hash(old):
+        os.replace(new, old)
+    else:
+        os.remove(new)
 
 
 class Line:
@@ -47,20 +63,20 @@ class Line:
         sig:        String with raw function signature
         args:       String with sequence of arguments to call function
 
-        Example:    MPI 1.8.12 int foo(char* a, size_t b)
+        Example:    MPI 1.12.2 int foo(char* a, size_t b)
 
         .nogil:     ""
         .mpi:       True
         .ros3:      False
         .direct_vfd: False
-        .version:   (1, 8, 12)
+        .version:   (1, 12, 2)
         .code:      "int"
         .fname:     "foo"
         .sig:       "char* a, size_t b"
         .args:      "a, b"
     """
 
-    PATTERN = re.compile("""(?P<mpi>(MPI)[ ]+)?
+    PATTERN = re.compile(r"""(?P<mpi>(MPI)[ ]+)?
                             (?P<ros3>(ROS3)[ ]+)?
                             (?P<direct_vfd>(DIRECT_VFD)[ ]+)?
                             (?P<min_version>([0-9]+\.[0-9]+\.[0-9]+))?
@@ -73,7 +89,7 @@ class Line:
                             (?P<nogil>(nogil))?
                             """, re.VERBOSE)
 
-    SIG_PATTERN = re.compile("""
+    SIG_PATTERN = re.compile(r"""
                              (?:unsigned[ ]+)?
                              (?:[a-zA-Z_]+[a-zA-Z0-9_]*\**)
                              [ ]+[ *]*
@@ -127,24 +143,19 @@ class Line:
 
 
 raw_preamble = """\
-# cython: language_level=3
 #
 # Warning: this file is auto-generated from api_gen.py. DO NOT EDIT!
 #
 
-include "config.pxi"
 from .api_types_hdf5 cimport *
 from .api_types_ext cimport *
 
 """
 
 def_preamble = """\
-# cython: language_level=3
 #
 # Warning: this file is auto-generated from api_gen.py. DO NOT EDIT!
 #
-
-include "config.pxi"
 
 from .api_types_hdf5 cimport *
 from .api_types_ext cimport *
@@ -152,12 +163,10 @@ from .api_types_ext cimport *
 """
 
 imp_preamble = """\
-# cython: language_level=3
 #
 # Warning: this file is auto-generated from api_gen.py. DO NOT EDIT!
 #
 
-include "config.pxi"
 from .api_types_ext cimport *
 from .api_types_hdf5 cimport *
 
@@ -170,15 +179,21 @@ from ._errors cimport set_exception, set_default_error_handler
 
 class LineProcessor:
 
+    def __init__(self, config) -> None:
+        self.config = config
+
     def run(self):
 
         # Function definitions file
-        self.functions = open(op.join('h5py', 'api_functions.txt'), 'r')
+        self.functions = Path('h5py', 'api_functions.txt').open('r')
 
         # Create output files
-        self.raw_defs = open(op.join('h5py', '_hdf5.pxd'), 'w')
-        self.cython_defs = open(op.join('h5py', 'defs.pxd'), 'w')
-        self.cython_imp = open(op.join('h5py', 'defs.pyx'), 'w')
+        path_raw_defs = Path('h5py', '_hdf5.pxd.new')
+        path_cython_defs = Path('h5py', 'defs.pxd.new')
+        path_cython_imp = Path('h5py', 'defs.pyx.new')
+        self.raw_defs = path_raw_defs.open('w')
+        self.cython_defs = path_cython_defs.open('w')
+        self.cython_imp = path_cython_imp.open('w')
 
         self.raw_defs.write(raw_preamble)
         self.cython_defs.write(def_preamble)
@@ -210,51 +225,46 @@ class LineProcessor:
         self.cython_defs.close()
         self.raw_defs.close()
 
-    def add_cython_if(self, block):
-        """ Wrap a block of code in the required "IF" checks """
+        replace_or_remove(path_cython_imp)
+        replace_or_remove(path_cython_defs)
+        replace_or_remove(path_raw_defs)
 
-        def wrapif(condition, code):
-            code = code.replace('\n', '\n    ', code.count('\n') - 1)  # Yes, -1.
-            code = "IF {0}:\n    {1}".format(condition, code)
-            return code
-
-        if self.line.mpi:
-            block = wrapif('MPI', block)
-
-        if self.line.ros3:
-            block = wrapif('ROS3', block)
-
-        if self.line.direct_vfd:
-            block = wrapif('DIRECT_VFD', block)
-
-        if self.line.min_version is not None and self.line.max_version is not None:
-            block = wrapif('HDF5_VERSION >= {0.min_version} and HDF5_VERSION <= {0.max_version}'.format(self.line), block)
-        elif self.line.min_version is not None:
-            block = wrapif('HDF5_VERSION >= {0.min_version}'.format(self.line), block)
-        elif self.line.max_version is not None:
-            block = wrapif('HDF5_VERSION <= {0.max_version}'.format(self.line), block)
-
-        return block
+    def check_settings(self) -> bool:
+        """ Return True if and only if the code block should be compiled within given settings """
+        if (
+            (self.line.mpi and not self.config.mpi)
+            or (self.line.ros3 and not self.config.ros3)
+            or (self.line.direct_vfd and not self.config.direct_vfd)
+            or (self.line.min_version is not None and self.config.hdf5_version < self.line.min_version)
+            or (self.line.max_version is not None and self.config.hdf5_version > self.line.max_version)
+        ):
+            return False
+        else:
+            return True
 
     def write_raw_sig(self):
         """ Write out "cdef extern"-style definition for an HDF5 function """
+        if not self.check_settings():
+            return
         raw_sig = "{0.code} {0.fname}({0.sig}) {0.nogil}\n".format(self.line)
-        raw_sig = self.add_cython_if(raw_sig)
         raw_sig = "\n".join(("    " + x if x.strip() else x) for x in raw_sig.split("\n"))
         self.raw_defs.write(raw_sig)
 
     def write_cython_sig(self):
         """ Write out Cython signature for wrapper function """
+        if not self.check_settings():
+            return
         if self.line.fname == 'H5Dget_storage_size':
             # Special case: https://github.com/h5py/h5py/issues/1475
             cython_sig = "cdef {0.code} {0.fname}({0.sig}) except? {0.err_value}\n".format(self.line)
         else:
             cython_sig = "cdef {0.code} {0.fname}({0.sig}) except {0.err_value}\n".format(self.line)
-        cython_sig = self.add_cython_if(cython_sig)
         self.cython_defs.write(cython_sig)
 
     def write_cython_imp(self):
         """ Write out Cython wrapper implementation """
+        if not self.check_settings():
+            return
         if self.line.nogil:
             imp = """\
 cdef {0.code} {0.fname}({0.sig}) except {0.err_value}:
@@ -299,12 +309,13 @@ cdef {0.code} {0.fname}({0.sig}) except {0.err_value}:
 
 """
         imp = imp.format(self.line)
-        imp = self.add_cython_if(imp)
         self.cython_imp.write(imp)
 
 
 def run():
-    lp = LineProcessor()
+    # Get configuration from environment variables
+    config = BuildConfig.from_env()
+    lp = LineProcessor(config)
     lp.run()
 
 

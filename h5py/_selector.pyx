@@ -1,4 +1,3 @@
-# cython: language_level=3
 """Class to efficiently select and read data from an HDF5 dataset
 
 This is written in Cython to reduce overhead when reading small amounts of
@@ -341,7 +340,7 @@ cdef class Reader:
 
             arr = PyArray_ZEROS(arr_rank, arr_shape, self.np_typenum, 0)
             if not self.native_byteorder:
-                arr = arr.newbyteorder()
+                arr = arr.view(arr.dtype.newbyteorder())
         finally:
             efree(arr_shape)
 

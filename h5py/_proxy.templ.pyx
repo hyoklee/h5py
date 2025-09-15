@@ -13,7 +13,11 @@
     Proxy functions for read/write, to work around the HDF5 bogus type issue.
 """
 
-include "config.pxi"
+from .h5t import NUMPY_RUNTIME_VERSION_TUPLE
+if NUMPY_RUNTIME_VERSION_TUPLE >= (2, 0, 0):
+    # Numpy native variable-width strings
+    # This fails to import on NumPy < 2.0
+    from ._npystrings import npystrings_pack, npystrings_unpack
 
 cdef enum copy_dir:
     H5PY_SCATTER = 0,
@@ -53,8 +57,9 @@ cdef herr_t attr_rw(hid_t attr, hid_t mtype, void *progbuf, int read) except -1:
             else:
                 need_bkg = needs_bkg_buffer(mtype, atype)
             if need_bkg:
-                back_buf = malloc(msize*npoints)
-                memcpy(back_buf, progbuf, msize*npoints)
+                back_buf = create_buffer(msize, asize, npoints)
+                if read:
+                    memcpy(back_buf, progbuf, msize*npoints)
 
             if read:
                 H5Aread(attr, atype, conv_buf)
@@ -122,6 +127,8 @@ cdef herr_t dset_rw(hid_t dset, hid_t mtype, hid_t mspace, hid_t fspace,
                 fspace = mspace = dspace = H5Dget_space(dset)
 
             npoints = H5Sget_select_npoints(mspace)
+            if npoints == 0:
+                return 0
             cspace = H5Screate_simple(1, &npoints, NULL)
 
             conv_buf = create_buffer(H5Tget_size(dstype), H5Tget_size(mtype), npoints)
@@ -134,7 +141,8 @@ cdef herr_t dset_rw(hid_t dset, hid_t mtype, hid_t mspace, hid_t fspace,
                 need_bkg = needs_bkg_buffer(mtype, dstype)
             if need_bkg:
                 back_buf = create_buffer(H5Tget_size(dstype), H5Tget_size(mtype), npoints)
-                h5py_copy(mtype, mspace, back_buf, progbuf, H5PY_GATHER)
+                if read:
+                    h5py_copy(mtype, mspace, back_buf, progbuf, H5PY_GATHER)
 
             if read:
                 H5Dread(dset, dstype, cspace, fspace, dxpl, conv_buf)
@@ -148,6 +156,69 @@ cdef herr_t dset_rw(hid_t dset, hid_t mtype, hid_t mspace, hid_t fspace,
 
     finally:
         free(back_buf)
+        free(conv_buf)
+        if dstype > 0:
+            H5Tclose(dstype)
+        if dspace > 0:
+            H5Sclose(dspace)
+        if cspace > 0:
+            H5Sclose(cspace)
+
+    return 0
+
+
+cdef herr_t dset_rw_vlen_strings(
+    hid_t dset, hid_t mspace, hid_t fspace, hid_t dxpl,
+    void* progbuf, PyArray_Descr* descr, int read) except -1:
+    """Variant of dset_rw for variable-width NumPy strings.
+    Note: doesn't support compound types.
+    """
+
+    cdef hid_t dstype = -1      # Dataset datatype
+    cdef hid_t h5_vlen_string = -1
+    cdef hid_t dspace = -1      # Dataset dataspace
+    cdef hid_t cspace = -1      # Temporary contiguous dataspaces
+
+    cdef void* conv_buf = NULL
+    cdef char* zero_terminated_buf = NULL
+    cdef hsize_t npoints
+
+    assert NUMPY_RUNTIME_VERSION_TUPLE >= (2, 0, 0)
+
+    h5_vlen_string = H5Tcopy(H5T_C_S1)
+    H5Tset_size(h5_vlen_string, H5T_VARIABLE)
+    H5Tset_cset(h5_vlen_string, H5T_CSET_UTF8)
+
+    try:
+        dstype = H5Dget_type(dset)
+
+        if mspace == H5S_ALL and fspace != H5S_ALL:
+            mspace = fspace
+        elif mspace != H5S_ALL and fspace == H5S_ALL:
+            fspace = mspace
+        elif mspace == H5S_ALL and fspace == H5S_ALL:
+            fspace = mspace = dspace = H5Dget_space(dset)
+
+        npoints = H5Sget_select_npoints(mspace)
+        if npoints == 0:
+            return 0
+        cspace = H5Screate_simple(1, &npoints, NULL)
+
+        conv_buf = create_buffer(H5Tget_size(dstype), H5Tget_size(h5_vlen_string), npoints)
+
+        if read:
+            H5Dread(dset, h5_vlen_string, cspace, fspace, dxpl, conv_buf)
+            # Convert contiguous char** to discontiguous NpyStrings.
+            npystrings_pack(mspace, <size_t> conv_buf, <size_t> progbuf, <size_t> descr)
+            H5Dvlen_reclaim(dstype, cspace, H5P_DEFAULT, conv_buf)
+        else:
+            # Convert discontiguous NpyStrings to contiguous char**.
+            zero_terminated_buf = <char *> <size_t> npystrings_unpack(
+                mspace, <size_t> conv_buf, <size_t> progbuf, <size_t> descr,
+                npoints)
+            H5Dwrite(dset, h5_vlen_string, cspace, fspace, dxpl, conv_buf)
+    finally:
+        free(zero_terminated_buf)
         free(conv_buf)
         if dstype > 0:
             H5Tclose(dstype)
@@ -176,10 +247,7 @@ cdef hid_t make_reduced_type(hid_t mtype, hid_t dstype):
         try:
             mtype_fields.append(member_name)
         finally:
-            IF HDF5_VERSION >= (1, 8, 13):
-                H5free_memory(member_name)
-            ELSE:
-                free(member_name)
+            H5free_memory(member_name)
             member_name = NULL
 
     # First pass: add up the sizes of matching fields so we know how large a
@@ -194,10 +262,7 @@ cdef hid_t make_reduced_type(hid_t mtype, hid_t dstype):
             newtype_size += H5Tget_size(temptype)
             H5Tclose(temptype)
         finally:
-            IF HDF5_VERSION >= (1, 8, 13):
-                H5free_memory(member_name)
-            ELSE:
-                free(member_name)
+            H5free_memory(member_name)
             member_name = NULL
 
     newtype = H5Tcreate(H5T_COMPOUND, newtype_size)
@@ -214,10 +279,7 @@ cdef hid_t make_reduced_type(hid_t mtype, hid_t dstype):
             offset += H5Tget_size(temptype)
             H5Tclose(temptype)
         finally:
-            IF HDF5_VERSION >= (1, 8, 13):
-                H5free_memory(member_name)
-            ELSE:
-                free(member_name)
+            H5free_memory(member_name)
             member_name = NULL
 
     return newtype
@@ -248,7 +310,7 @@ ctypedef struct h5py_scatter_t:
     void* buf
 
 cdef herr_t h5py_scatter_cb(void* elem, hid_t type_id, unsigned ndim,
-                const hsize_t *point, void *operator_data) nogil except -1:
+                const hsize_t *point, void *operator_data) except -1 nogil:
     cdef h5py_scatter_t* info = <h5py_scatter_t*>operator_data
 
     memcpy(elem, (<char*>info[0].buf)+((info[0].i)*(info[0].elsize)),
@@ -259,7 +321,7 @@ cdef herr_t h5py_scatter_cb(void* elem, hid_t type_id, unsigned ndim,
     return 0
 
 cdef herr_t h5py_gather_cb(void* elem, hid_t type_id, unsigned ndim,
-                const hsize_t *point, void *operator_data) nogil except -1:
+                const hsize_t *point, void *operator_data) except -1 nogil:
     cdef h5py_scatter_t* info = <h5py_scatter_t*>operator_data
 
     memcpy((<char*>info[0].buf)+((info[0].i)*(info[0].elsize)), elem,
@@ -271,8 +333,8 @@ cdef herr_t h5py_gather_cb(void* elem, hid_t type_id, unsigned ndim,
 
 # Copy between a contiguous and non-contiguous buffer, with the layout
 # of the latter specified by a dataspace selection.
-cdef herr_t h5py_copy(hid_t tid, hid_t space, void* contig, void* noncontig,
-                 copy_dir op) except -1:
+cdef void h5py_copy(hid_t tid, hid_t space, void* contig, void* noncontig,
+                    copy_dir op):
 
     cdef h5py_scatter_t info
     cdef hsize_t elsize
@@ -288,9 +350,7 @@ cdef herr_t h5py_copy(hid_t tid, hid_t space, void* contig, void* noncontig,
     elif op == H5PY_GATHER:
         H5Diterate(noncontig, tid, space, h5py_gather_cb, &info)
     else:
-        raise RuntimeError("Illegal direction")
-
-    return 0
+        raise AssertionError("unreachable")
 
 # =============================================================================
 # VLEN support routines

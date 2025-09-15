@@ -10,7 +10,7 @@ If you have questions about the process or about the details of implementing
 your feature, feel free to ask on Github itself, or on the h5py section of the
 HDF5 forum:
 
-    https://forum.hdfgroup.org/c/hdf-tools/h5py
+    https://forum.hdfgroup.org/c/hdf5/h5py
 
 Posting on this forum requires registering for a free account with HDF group.
 
@@ -142,7 +142,7 @@ The easiest way to run the tests is with
 
     pip install tox  # Get tox
 
-    tox -e py37-test-deps  # Run tests in one environment
+    tox -e py312-test-deps  # Run tests in one environment
     tox                    # Run tests in all possible environments
     tox -a                 # List defined environments
 
@@ -231,7 +231,7 @@ opening the various files as we work through the example.
 
 First, get ahold of
 the function signature; the easiest place for this is at the `online
-HDF5 Reference Manual <https://support.hdfgroup.org/HDF5/doc/RM/RM_H5Front.html>`_.
+HDF5 Reference Manual <https://support.hdfgroup.org/documentation/hdf5/latest/_r_m.htmll>`_.
 Then, add the function's C signature to the file ``api_functions.txt``::
 
   hsize_t   H5Dget_storage_size(hid_t dset_id)
@@ -335,8 +335,8 @@ If the tests pass, the feature is ready for a pull request.
 Adding a function only available in certain versions of HDF5
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-At the moment, h5py must be backwards-compatible all the way back to
-HDF5 1.8.4.  Starting with h5py 2.2.0, it's possible to conditionally
+At the moment, h5py must be compatible with HDF5 back to version 1.10.4.
+But it's possible to conditionally
 include functions which only appear in newer versions of HDF5.  It's also
 possible to mark functions which require Parallel HDF5.  For example, the
 function ``H5Fset_mpi_atomicity`` was introduced in HDF5 1.8.9 and requires
@@ -348,23 +348,23 @@ communicate this::
 You can specify either, both or none of "MPI" or a version number in "X.Y.Z"
 format.
 
-In the Cython code, these show up as "preprocessor" defines ``MPI`` and
-``HDF5_VERSION``.  So the low-level implementation (as a method on
+In the Cython code, these show up as ``tempita`` template comments.
+So the low-level implementation (as a method on
 ``h5py.h5f.FileID``) looks like this::
 
-    IF MPI and HDF5_VERSION >= (1, 8, 9):
+    ### {{if MPI and HDF5_VERSION >= (1, 8, 9)}}
+    def set_mpi_atomicity(self, bint atomicity):
+        """ (BOOL atomicity)
 
-        def set_mpi_atomicity(self, bint atomicity):
-            """ (BOOL atomicity)
+        For MPI-IO driver, set to atomic (True), which guarantees sequential
+        I/O semantics, or non-atomic (False), which improves  performance.
 
-            For MPI-IO driver, set to atomic (True), which guarantees sequential
-            I/O semantics, or non-atomic (False), which improves  performance.
+        Default is False.
 
-            Default is False.
-
-            Feature requires: 1.8.9 and Parallel HDF5
-            """
-            H5Fset_mpi_atomicity(self.id, <hbool_t>atomicity)
+        Feature requires: 1.8.9 and Parallel HDF5
+        """
+        H5Fset_mpi_atomicity(self.id, <hbool_t>atomicity)
+    ### {{endif}}
 
 High-level code can check the version of the HDF5 library, or check to see if
 the method is present on ``FileID`` objects.
@@ -393,7 +393,7 @@ To run these tests, you'll need to:
 
 Then running::
 
-   $ CC='mpicc' HDF5_MPI=ON tox -e py37-test-deps-mpi4py
+   $ CC='mpicc' HDF5_MPI=ON tox -e py312-test-deps-mpi
 
 should run the tests. You may need to pass ``HDF5_DIR`` depending on the
 location of the HDF5 with MPI support. You can choose which python version to

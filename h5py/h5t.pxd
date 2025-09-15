@@ -1,4 +1,3 @@
-# cython: language_level=3
 # This file is part of h5py, a Python interface to the HDF5 library.
 #
 # http://www.h5py.org
@@ -69,4 +68,5 @@ cdef class TypeCompoundID(TypeCompositeID):
 cpdef TypeID typewrap(hid_t id_)
 cdef hid_t H5PY_OBJ
 cdef char* H5PY_PYTHON_OPAQUE_TAG
+cdef char* H5PY_NUMPY_STRING_TAG
 cpdef TypeID py_create(object dtype, bint logical=*, bint aligned=*)

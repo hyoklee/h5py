@@ -3,7 +3,7 @@ parameters:
   installer: none
 
 steps:
-- task: CacheBeta@0
+- task: Cache@2
   displayName: HDF5 cache
   inputs:
     # The key should specify enough to avoid restoring an incompatible build.
@@ -12,7 +12,7 @@ steps:
     ${{ if eq(parameters.platform, 'windows') }}:
       key: 0 | HDF5 | "$(Agent.OS)" | "$(Agent.OSArchitecture)" | "$(HDF5_VERSION)" | "$(HDF5_VSVERSION)" | "$(HDF5_MPI)" | ci/get_hdf5_win.py
     ${{ if ne(parameters.platform, 'windows') }}:
-      key: 0 | HDF5 | "$(Agent.OS)" | "$(Agent.OSArchitecture)" | "$(HDF5_VERSION)" | "$(HDF5_MPI)" | ci/get_hdf5_if_needed.sh | ci/configure_hdf5_mac.sh
+      key: 0 | HDF5 | "$(Agent.OS)" | "$(Agent.OSArchitecture)" | "$(HDF5_VERSION)" | "$(HDF5_MPI)" | ci/get_hdf5_if_needed.sh
     path: $(HDF5_CACHE_DIR)
   condition: and(succeeded(), ne(variables['HDF5_VERSION'], ''))
 
@@ -42,8 +42,8 @@ steps:
     displayName: 'Install nuget dependencies'
 - ${{ if eq(parameters.installer, 'brew') }}:
   - script: |
-      brew install pkg-config hdf5@1.10 ccache open-mpi
-      brew link --force hdf5@1.10
+      brew install pkg-config hdf5 ccache open-mpi
+      brew link --force hdf5
       ls /usr/local
       echo "$PATH"
     displayName: 'Install brew dependencies'
@@ -75,8 +75,8 @@ steps:
       displayName: 'ensure HDF5'
 - ${{ if eq(parameters.shell, 'cmd') }}:
     - script: |
-        py -3.7 -m pip install requests
-        py -3.7 ci\\get_hdf5_win.py
+        py -3.10 -m pip install requests
+        py -3.10 ci\\get_hdf5_win.py
       displayName: 'ensure HDF5'
 
 - script: env

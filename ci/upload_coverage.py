@@ -52,7 +52,7 @@ def _run(proc: Popen, timeout):
 
 def run_with_python(args, timeout=30, **kwargs):
     if platform.system() == 'Windows':
-        exe = ['py', '-' + PYVERSION, '-m']
+        exe = [sys.executable, "-m"]
     else:
         exe = []
     cmd = exe + args
@@ -79,9 +79,9 @@ def get_pr_azure_ci():
 def send_coverage(*, workdir, coverage_files, codecov_token):
     chdir(workdir)
     run_with_python(['coverage', 'combine'] + coverage_files)
-    msg(f"Combined coverage")
+    msg("Combined coverage")
     run_with_python(['coverage', 'xml', '--ignore-errors'])
-    msg(f"Created coverage xml")
+    msg("Created coverage xml")
 
     # Upload coverage.xml to codecov
     codecov_args = []

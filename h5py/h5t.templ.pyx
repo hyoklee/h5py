@@ -1,4 +1,3 @@
-# cython: language_level=3
 # This file is part of h5py, a Python interface to the HDF5 library.
 #
 # http://www.h5py.org
@@ -16,7 +15,7 @@
     The majority of the H5T API is presented as methods on these identifiers.
 """
 # C-level imports
-include "config.pxi"
+
 from ._objects cimport pdefault
 cimport numpy as cnp
 from .h5r cimport Reference, RegionReference
@@ -28,9 +27,10 @@ from .utils cimport  emalloc, efree, require_tuple, convert_dims,\
 
 # Python imports
 import codecs
+import platform
+import re
 import sys
 from collections import namedtuple
-import sys
 import numpy as np
 from .h5 import get_config
 
@@ -38,8 +38,14 @@ from ._objects import phil, with_phil
 
 cfg = get_config()
 
-DEF MACHINE = UNAME_MACHINE  # processor architecture, provided by Cython
+_UNAME_MACHINE = platform.uname()[4]
+_IS_PPC64 = _UNAME_MACHINE == "ppc64"
+_IS_PPC64LE = _UNAME_MACHINE == "ppc64le"
+
 cdef char* H5PY_PYTHON_OPAQUE_TAG = "PYTHON:OBJECT"
+cdef char* H5PY_NUMPY_STRING_TAG = "NUMPY:STRING"
+
+NUMPY_RUNTIME_VERSION_TUPLE = tuple(int(x) for x in re.findall(r'\d+', np.__version__)[:3])
 
 # === Custom C API ============================================================
 
@@ -148,6 +154,37 @@ IEEE_F32BE = lockid(H5T_IEEE_F32BE)
 IEEE_F64LE = lockid(H5T_IEEE_F64LE)
 IEEE_F64BE = lockid(H5T_IEEE_F64BE)
 
+### {{if HDF5_VERSION < (1, 14, 4)}}
+
+IEEE_F16BE = IEEE_F32BE.copy()
+IEEE_F16BE.set_fields(15, 10, 5, 0, 10)
+IEEE_F16BE.set_size(2)
+IEEE_F16BE.set_ebias(15)
+IEEE_F16BE.lock()
+
+IEEE_F16LE = IEEE_F16BE.copy()
+IEEE_F16LE.set_order(H5T_ORDER_LE)
+IEEE_F16LE.lock()
+
+### {{else}}
+
+IEEE_F16BE = lockid(H5T_IEEE_F16BE)
+IEEE_F16LE = lockid(H5T_IEEE_F16LE)
+
+### {{endif}}
+
+# Quad floats
+IEEE_F128BE = IEEE_F64BE.copy()
+IEEE_F128BE.set_size(16)
+IEEE_F128BE.set_precision(128)
+IEEE_F128BE.set_fields(127, 112, 15, 0, 112)
+IEEE_F128BE.set_ebias(16383)
+IEEE_F128BE.lock()
+
+IEEE_F128LE = IEEE_F128BE.copy()
+IEEE_F128LE.set_order(H5T_ORDER_LE)
+IEEE_F128LE.lock()
+
 # Signed 2's complement integer types
 STD_I8LE  = lockid(H5T_STD_I8LE)
 STD_I16LE = lockid(H5T_STD_I16LE)
@@ -198,6 +235,21 @@ NATIVE_FLOAT = lockid(H5T_NATIVE_FLOAT)
 NATIVE_DOUBLE = lockid(H5T_NATIVE_DOUBLE)
 NATIVE_LDOUBLE = lockid(H5T_NATIVE_LDOUBLE)
 
+LDOUBLE_LE = NATIVE_LDOUBLE.copy()
+LDOUBLE_LE.set_order(H5T_ORDER_LE)
+LDOUBLE_LE.lock()
+
+LDOUBLE_BE = NATIVE_LDOUBLE.copy()
+LDOUBLE_BE.set_order(H5T_ORDER_BE)
+LDOUBLE_BE.lock()
+
+### {{if HDF5_VERSION > (1, 14, 3)}}
+if H5T_NATIVE_FLOAT16 != H5I_INVALID_HID:
+    NATIVE_FLOAT16 = lockid(H5T_NATIVE_FLOAT16)
+else:
+    NATIVE_FLOAT16 = H5I_INVALID_HID
+### {{endif}}
+
 # Unix time types
 UNIX_D32LE = lockid(H5T_UNIX_D32LE)
 UNIX_D64LE = lockid(H5T_UNIX_D64LE)
@@ -217,43 +269,20 @@ VARIABLE = H5T_VARIABLE
 CSET_ASCII = H5T_CSET_ASCII
 CSET_UTF8 = H5T_CSET_UTF8
 
-# Mini (or short) floats
-IEEE_F16BE = IEEE_F32BE.copy()
-IEEE_F16BE.set_fields(15, 10, 5, 0, 10)
-IEEE_F16BE.set_size(2)
-IEEE_F16BE.set_ebias(15)
-IEEE_F16BE.lock()
-
-IEEE_F16LE = IEEE_F16BE.copy()
-IEEE_F16LE.set_order(H5T_ORDER_LE)
-IEEE_F16LE.lock()
-
-# Quad floats
-IEEE_F128BE = IEEE_F64BE.copy()
-IEEE_F128BE.set_size(16)
-IEEE_F128BE.set_precision(128)
-IEEE_F128BE.set_fields(127, 112, 15, 0, 112)
-IEEE_F128BE.set_ebias(16383)
-IEEE_F128BE.lock()
-
-IEEE_F128LE = IEEE_F128BE.copy()
-IEEE_F128LE.set_order(H5T_ORDER_LE)
-IEEE_F128LE.lock()
-
-LDOUBLE_LE = NATIVE_LDOUBLE.copy()
-LDOUBLE_LE.set_order(H5T_ORDER_LE)
-LDOUBLE_LE.lock()
-
-LDOUBLE_BE = NATIVE_LDOUBLE.copy()
-LDOUBLE_BE.set_order(H5T_ORDER_BE)
-LDOUBLE_BE.lock()
-
 # Custom Python object pointer type
 cdef hid_t H5PY_OBJ = H5Tcreate(H5T_OPAQUE, sizeof(PyObject*))
 H5Tset_tag(H5PY_OBJ, H5PY_PYTHON_OPAQUE_TAG)
 H5Tlock(H5PY_OBJ)
 
 PYTHON_OBJECT = lockid(H5PY_OBJ)
+
+# HDF5 datatype to represent Numpy (>=2) variable-length strings
+# Should never be directly stored in files.
+cdef hid_t H5PY_NPYSTR = H5Tcreate(H5T_OPAQUE, 2 * sizeof(size_t))
+H5Tset_tag(H5PY_NPYSTR, H5PY_NUMPY_STRING_TAG)
+H5Tlock(H5PY_NPYSTR)
+
+NUMPY_VLEN_STRING = lockid(H5PY_NPYSTR)
 
 # Translation tables for HDF5 -> NumPy dtype conversion
 cdef dict _order_map = { H5T_ORDER_NONE: '|', H5T_ORDER_LE: '<', H5T_ORDER_BE: '>'}
@@ -283,12 +312,12 @@ cdef (int, int, int) _correct_float_info(ftype_, finfo):
     maxexp = finfo.maxexp
     minexp = finfo.minexp
     # workaround for numpy's buggy finfo on float128 on ppc64 archs
-    if ftype_ == np.longdouble and MACHINE == 'ppc64':
+    if ftype_ == np.longdouble and _IS_PPC64:
         # values reported by hdf5
         nmant = 116
         maxexp = 1024
         minexp = -1022
-    elif ftype_ == np.longdouble and MACHINE == 'ppc64le':
+    elif ftype_ == np.longdouble and _IS_PPC64LE:
         # values reported by hdf5
         nmant = 52
         maxexp = 1024
@@ -387,7 +416,7 @@ cdef class TypeID(ObjectID):
     """
         Base class for type identifiers (implements common operations)
 
-        * Hashable: If committed; in HDF5 1.8.X, also if locked
+        * Hashable: If committed or locked
         * Equality: Logical H5T comparison
     """
 
@@ -427,12 +456,12 @@ cdef class TypeID(ObjectID):
             return cpy
 
 
-    property dtype:
+    @property
+    def dtype(self):
         """ A Numpy-style dtype object representing this object.
         """
-        def __get__(self):
-            with phil:
-                return self.py_dtype()
+        with phil:
+            return self.py_dtype()
 
 
     cdef object py_dtype(self):
@@ -654,10 +683,7 @@ cdef class TypeOpaqueID(TypeID):
             tag = buf
             return tag
         finally:
-            IF HDF5_VERSION >= (1, 8, 13):
-                H5free_memory(buf)
-            ELSE:
-                free(buf)
+            H5free_memory(buf)
 
     cdef object py_dtype(self):
         cdef bytes tag = self.get_tag()
@@ -1118,10 +1144,7 @@ cdef class TypeCompositeID(TypeID):
             assert name != NULL
             pyname = <bytes>name
         finally:
-            IF HDF5_VERSION >= (1, 8, 13):
-                H5free_memory(name)
-            ELSE:
-                free(name)
+            H5free_memory(name)
 
         return pyname
 
@@ -1475,7 +1498,7 @@ cdef TypeEnumID _c_enum(cnp.dtype dt, dict vals):
         if isinstance(name, bytes):
             bname = name
         else:
-            bname = unicode(name).encode('utf8')
+            bname = str(name).encode('utf8')
         out.enum_insert(bname, vals[name])
     return out
 
@@ -1574,13 +1597,14 @@ cdef TypeCompoundID _c_complex(cnp.dtype dt):
             tid_sub = H5T_NATIVE_DOUBLE
 
     elif length == 32:
-        IF COMPLEX256_SUPPORT:
-            size = h5py_size_n256
-            off_r = h5py_offset_n256_real
-            off_i = h5py_offset_n256_imag
-            tid_sub = H5T_NATIVE_LDOUBLE
-        ELSE:
-            raise TypeError("Illegal length %d for complex dtype" % length)
+        ### {{if COMPLEX256_SUPPORT}}
+        size = h5py_size_n256
+        off_r = h5py_offset_n256_real
+        off_i = h5py_offset_n256_imag
+        tid_sub = H5T_NATIVE_LDOUBLE
+        ### {{else}}
+        raise TypeError("Illegal length %d for complex dtype" % length)
+        ### {{endif}}
     else:
         raise TypeError("Illegal length %d for complex dtype" % length)
 
@@ -1613,7 +1637,7 @@ cdef TypeCompoundID _c_compound(cnp.dtype dt, int logical, int aligned):
     # (i.e. the position of the member in the struct)
     for name in sorted(dt.names, key=(lambda n: dt.fields[n][1])):
         field = dt.fields[name]
-        h5_name = name.encode('utf8') if isinstance(name, unicode) else name
+        h5_name = name.encode('utf8') if isinstance(name, str) else name
 
         # Get HDF5 data types and set the offset for each member
         member_dt = field[0]
@@ -1729,6 +1753,13 @@ cpdef TypeID py_create(object dtype_in, bint logical=0, bint aligned=0):
         elif kind == c'b':
             return _c_bool(dt)
 
+        # numpy.dtypes.StringDType
+        elif kind == c'T':
+            if logical:
+                return _c_vlen_unicode()
+
+            return NUMPY_VLEN_STRING
+
         # Object types (including those with vlen hints)
         elif kind == c'O':
 
@@ -1736,7 +1767,7 @@ cpdef TypeID py_create(object dtype_in, bint logical=0, bint aligned=0):
                 vlen = check_vlen_dtype(dt)
                 if vlen is bytes:
                     return _c_vlen_str()
-                elif vlen is unicode:
+                elif vlen is str:
                     return _c_vlen_unicode()
                 elif vlen is not None:
                     return vlen_create(py_create(vlen, logical))
@@ -1770,7 +1801,11 @@ def string_dtype(encoding='utf-8', length=None):
     not unicode code points.
 
     For variable length strings, the data should be passed as Python str objects
-    (unicode in Python 2) if the encoding is 'utf-8', and bytes if it is 'ascii'.
+    if the encoding is 'utf-8', and bytes if it is 'ascii'.
+    Starting from NumPy 2.0, it is preferred to pass utf-8 data as variable-width
+    NumPy strings (``dtype=numpy.dtypes.StringDType()`` or ``dtype='T'``
+    instead of ``dtype=h5py.string_dtype()``).
+
     For fixed length strings, the data should be numpy fixed length *bytes*
     arrays, regardless of the encoding. Fixed length unicode data is not
     supported.
@@ -1789,7 +1824,8 @@ def string_dtype(encoding='utf-8', length=None):
         # Fixed length string
         return np.dtype("|S" + str(length), metadata={'h5py_encoding': encoding})
     elif length is None:
-        vlen = unicode if (encoding == 'utf-8') else bytes
+        # Variable-width Python object string
+        vlen = str if (encoding == 'utf-8') else bytes
         return np.dtype('O', metadata={'vlen': vlen})
     else:
         raise TypeError("length must be integer or None (got %r)" % length)
@@ -1880,6 +1916,10 @@ def check_vlen_dtype(dt):
 
     Returns None if the dtype does not represent an HDF5 vlen.
     """
+    # StringDType (NumPy >=2.0)
+    if dt.kind == 'T':
+        return str
+
     try:
         return dt.metadata.get('vlen', None)
     except AttributeError:
@@ -1897,7 +1937,7 @@ def check_string_dtype(dt):
     Returns None if the dtype does not represent an HDF5 string.
     """
     vlen_kind = check_vlen_dtype(dt)
-    if vlen_kind is unicode:
+    if vlen_kind is str:
         return string_info('utf-8', None)
     elif vlen_kind is bytes:
         return string_info('ascii', None)
@@ -1944,7 +1984,7 @@ def check_dtype(**kwds):
 
     vlen = dtype
         If the dtype represents an HDF5 vlen, returns the Python base class.
-        Currently only builting string vlens (str) are supported.  Returns
+        Currently only built-in string vlens (str) are supported.  Returns
         None if the dtype does not represent an HDF5 vlen.
 
     enum = dtype
@@ -1965,6 +2005,10 @@ def check_dtype(**kwds):
 
     if name not in ('vlen', 'enum', 'ref'):
         raise TypeError('Unknown special type "%s"' % name)
+
+    # StringDType (numpy >=2.0)
+    if name == "vlen" and dt.kind == "T":
+        return str
 
     try:
         return dt.metadata[name]

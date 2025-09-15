@@ -9,9 +9,6 @@
 
 # Python-style minor error classes.  If the minor error code matches an entry
 # in this dict, the generated exception will be used.
-
-include "config.pxi"
-
 from cpython cimport PyErr_Occurred, PyErr_SetObject
 import re
 
@@ -80,21 +77,23 @@ _exact_table = {
     (H5E_FILE, H5E_CANTCONVERT):    ValueError, # Invalid file format
 }
 
-IF HDF5_VERSION > (1, 12, 0):
-    _exact_table[(H5E_DATASET, H5E_CANTCREATE)] = ValueError  # bad param for dataset setup
+### {{if HDF5_VERSION > (1, 12, 0)}}
+_exact_table[(H5E_DATASET, H5E_CANTCREATE)] = ValueError  # bad param for dataset setup
+### {{endif}}
 
-IF HDF5_VERSION < (1, 13, 0):
-    _minor_table[H5E_BADATOM] = ValueError  # Unable to find atom information (already closed?)
-    _exact_table[(H5E_SYM, H5E_CANTINIT)] = ValueError  # Object already exists/1.8
-ELSE:
-    _minor_table[H5E_BADID] = ValueError  # Unable to find ID information
-    _exact_table[(H5E_SYM, H5E_CANTCREATE)] = ValueError  # Object already exists
+### {{if HDF5_VERSION < (1, 13, 0)}}
+_minor_table[H5E_BADATOM] = ValueError  # Unable to find atom information (already closed?)
+_exact_table[(H5E_SYM, H5E_CANTINIT)] = ValueError  # Object already exists/1.8
+### {{else}}
+_minor_table[H5E_BADID] = ValueError  # Unable to find ID information
+_exact_table[(H5E_SYM, H5E_CANTCREATE)] = ValueError  # Object already exists
+### {{endif}}
 
 cdef struct err_data_t:
     H5E_error_t err
     int n
 
-cdef herr_t walk_cb(unsigned int n, const H5E_error_t *desc, void *e) nogil noexcept:
+cdef herr_t walk_cb(unsigned int n, const H5E_error_t *desc, void *e) noexcept nogil:
 
     cdef err_data_t *ee = <err_data_t*>e
 
@@ -168,7 +167,7 @@ cdef err_cookie _error_handler  # Store error handler used by h5py
 _error_handler.func = NULL
 _error_handler.data = NULL
 
-cdef void set_default_error_handler() nogil:
+cdef void set_default_error_handler() noexcept nogil:
     """Set h5py's current default error handler"""
     H5Eset_auto(<hid_t>H5E_DEFAULT, _error_handler.func, _error_handler.data)
 

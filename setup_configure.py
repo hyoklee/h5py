@@ -1,10 +1,9 @@
 
 """
-    Implements a new custom Distutils command for handling library
+    Implements a new custom setuptools command for handling library
     configuration.
 
-    The "configure" command here doesn't directly affect things like
-    config.pxi; rather, it exists to provide a set of attributes that are
+    The "configure" command exists to provide a set of attributes that are
     used by the build_ext replacement in setup_build.py.
 
     Options from the command line and environment variables are stored
@@ -18,6 +17,7 @@
 
 import os
 import os.path as op
+import platform
 import re
 import sys
 import json
@@ -43,10 +43,11 @@ def stash_config(dct):
 
 def validate_version(s):
     """Ensure that s contains an X.Y.Z format version string, or ValueError."""
-    m = re.match('(\d+)\.(\d+)\.(\d+)$', s)
+    # HDF5 tags can have a patch version, which we'll ignore for now.
+    m = re.match(r'(\d+)\.(\d+)\.(\d+)(?:\.\d+)?$', s)
     if m:
         return tuple(int(x) for x in m.groups())
-    raise ValueError(f"HDF5 version string {s!r} not in X.Y.Z format")
+    raise ValueError(f"HDF5 version string {s!r} not in X.Y.Z[.P] format")
 
 
 def mpi_enabled():
@@ -165,7 +166,7 @@ class BuildConfig:
         try:
             if pkgconfig.exists(pc_name):
                 pc = pkgconfig.parse(pc_name)
-        except EnvironmentError:
+        except OSError:
             if os.name != 'nt':
                 print(
                     "Building h5py requires pkg-config unless the HDF5 path "
@@ -251,10 +252,9 @@ class HDF5LibWrapper:
             else:
                 default_path = 'libhdf5-0.dll'
                 regexp = re.compile(r'^libhdf5-[0-9].dll')
-            if sys.version_info >= (3, 8):
-                # To overcome "difficulty" loading the library on windows
-                # https://bugs.python.org/issue42114
-                load_kw['winmode'] = 0
+            # To overcome "difficulty" loading the library on windows
+            # https://bugs.python.org/issue42114
+            load_kw['winmode'] = 0
         elif sys.platform.startswith('cygwin'):
             default_path = 'cyghdf5-200.dll'
             regexp = re.compile(r'^cyghdf5-\d+.dll$')
@@ -288,6 +288,7 @@ class HDF5LibWrapper:
             lib = ctypes.CDLL(path, **load_kw)
         except Exception:
             print("error: Unable to load dependency HDF5, make sure HDF5 is installed properly")
+            print(f"on {sys.platform=} with {platform.machine()=}")
             print("Library dirs checked:", libdirs)
             raise
 

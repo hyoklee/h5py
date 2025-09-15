@@ -1,4 +1,3 @@
-# cython: language_level=3
 # This file is part of h5py, a Python interface to the HDF5 library.
 #
 # http://www.h5py.org
@@ -69,8 +68,6 @@ cdef class PropDAID(PropInstanceID):
     """ Dataset access property list"""
     cdef char* _virtual_prefix_buf
     cdef char* _efile_prefix_buf
-
-# --- New in 1.8 ---
 
 cdef class PropLCID(PropCreateID):
     """ Link creation property list """

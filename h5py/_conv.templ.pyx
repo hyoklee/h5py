@@ -1,5 +1,4 @@
 # cython: profile=False
-# cython: language_level=3
 # This file is part of h5py, a Python interface to the HDF5 library.
 #
 # http://www.h5py.org
@@ -12,7 +11,6 @@
 """
     Low-level type-conversion routines.
 """
-include "config.pxi"
 
 from logging import getLogger
 
@@ -22,11 +20,12 @@ from .h5t cimport H5PY_OBJ, typewrap, py_create, TypeID, H5PY_PYTHON_OPAQUE_TAG
 from libc.stdlib cimport realloc
 from libc.string cimport strcmp
 from .utils cimport emalloc, efree
+from ._proxy cimport needs_bkg_buffer
 cfg = get_config()
 
 # Initialization of numpy
 cimport numpy as cnp
-from numpy cimport npy_intp, NPY_WRITEABLE, NPY_C_CONTIGUOUS, NPY_OWNDATA
+from numpy cimport npy_intp, NPY_ARRAY_WRITEABLE, NPY_ARRAY_C_CONTIGUOUS, NPY_ARRAY_OWNDATA, PyArray_DATA
 cnp._import_array()
 import numpy as np
 
@@ -158,10 +157,7 @@ cdef bint _is_pyobject_opaque(hid_t obj):
                     return True
         return False
     finally:
-        IF HDF5_VERSION >= (1, 8, 13):
-            H5free_memory(ctag)
-        ELSE:
-            free(ctag)
+        H5free_memory(ctag)
 
 cdef herr_t init_vlen2str(hid_t src_vlen, hid_t dst_str, void** priv) except -1:
     # /!\ Untested
@@ -419,10 +415,11 @@ cdef inline int conv_pyref2regref(void* ipt, void* opt, void* bkg, void* priv) e
         if not isinstance(obj, RegionReference):
             raise TypeError("Can't convert incompatible object to HDF5 region reference")
         ref = <RegionReference>(buf_obj0)
-        IF HDF5_VERSION >= (1, 12, 0):
-            memcpy(buf_ref, ref.ref.reg_ref.data, sizeof(hdset_reg_ref_t))
-        ELSE:
-            memcpy(buf_ref, ref.ref.reg_ref, sizeof(hdset_reg_ref_t))
+        ### {{if HDF5_VERSION >= (1, 12, 0)}}
+        memcpy(buf_ref, ref.ref.reg_ref.data, sizeof(hdset_reg_ref_t))
+        ### {{else}}
+        memcpy(buf_ref, ref.ref.reg_ref, sizeof(hdset_reg_ref_t))
+        ### {{endif}}
     else:
         memset(buf_ref, c'\0', sizeof(hdset_reg_ref_t))
 
@@ -697,10 +694,11 @@ cdef int conv_vlen2ndarray(void* ipt,
     cdef:
         PyObject** buf_obj = <PyObject**>opt
         vlen_t* in_vlen = <vlen_t*>ipt
-        int flags = NPY_WRITEABLE | NPY_C_CONTIGUOUS | NPY_OWNDATA
+        int flags = NPY_ARRAY_WRITEABLE | NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_OWNDATA
         npy_intp dims[1]
         void* data
-        cdef char[:] buf
+        char[:] buf
+        void* back_buf = NULL
         cnp.ndarray ndarray
         PyObject* ndarray_obj
         vlen_t in_vlen0
@@ -714,17 +712,42 @@ cdef int conv_vlen2ndarray(void* ipt,
     itemsize = H5Tget_size(outtype.id)
     if itemsize > H5Tget_size(intype.id):
         data = realloc(data, itemsize * size)
-    H5Tconvert(intype.id, outtype.id, size, data, NULL, H5P_DEFAULT)
+
+    if needs_bkg_buffer(intype.id, outtype.id):
+        back_buf = emalloc(H5Tget_size(outtype.id)*size)
+
+    try:
+        H5Tconvert(intype.id, outtype.id, size, data, back_buf, H5P_DEFAULT)
+    finally:
+        free(back_buf)
+
+    # We need to use different approaches to creating the ndarray with the converted
+    # data depending on the destination dtype.
+    # For simple dtypes, we can use SimpleNewFromData, but types like
+    # string & void need a size specified, so this function can't be used.
+    # Additionally, Cython doesn't expose NumPy C-API functions like NewFromDescr,
+    # so we fall back on copying directly to the underlying buffer
+    # of a new ndarray for other types.
 
     if elem_dtype.kind in b"biufcmMO":
         # type_num is enough to create an array for these dtypes
         ndarray = cnp.PyArray_SimpleNewFromData(1, dims, elem_dtype.type_num, data)
-    else:
-        # dtypes like string & void need a size specified, so can't be used with
-        # SimpleNewFromData. Cython doesn't expose NumPy C-API functions
+    elif not elem_dtype.hasobject:
+        # This covers things like string dtypes and simple compound dtypes,
+        # which can't be used with SimpleNewFromData.
+        # Cython doesn't expose NumPy C-API functions
         # like NewFromDescr, so we'll construct this with a Python function.
         buf = <char[:itemsize * size]> data
         ndarray = np.frombuffer(buf, dtype=elem_dtype)
+    else:
+        # Compound dtypes containing object fields: frombuffer() refuses these,
+        # so we'll fall back to allocating a new array and copying the data in.
+        ndarray = np.empty(size, dtype=elem_dtype)
+        memcpy(PyArray_DATA(ndarray), data, itemsize * size)
+
+        # In this code path, `data`, allocated by hdf5 to hold the v-len data,
+        # will no longer be used since have copied its contents to the ndarray.
+        efree(data)
 
     PyArray_ENABLEFLAGS(ndarray, flags)
     ndarray_obj = <PyObject*>ndarray
@@ -827,22 +850,29 @@ cdef int conv_ndarray2vlen(void* ipt,
         size_t len, nbytes
         PyObject* buf_obj0
         Py_buffer view
+        void* back_buf = NULL
+    try:
+        buf_obj0 = buf_obj[0]
+        ndarray = <cnp.ndarray> buf_obj0
+        len = ndarray.shape[0]
+        nbytes = len * max(H5Tget_size(outtype.id), H5Tget_size(intype.id))
 
-    buf_obj0 = buf_obj[0]
-    ndarray = <cnp.ndarray> buf_obj0
-    len = ndarray.shape[0]
-    nbytes = len * max(H5Tget_size(outtype.id), H5Tget_size(intype.id))
+        data = emalloc(nbytes)
 
-    data = emalloc(nbytes)
+        PyObject_GetBuffer(ndarray, &view, PyBUF_INDIRECT)
+        PyBuffer_ToContiguous(data, &view, view.len, b'C')
+        PyBuffer_Release(&view)
 
-    PyObject_GetBuffer(ndarray, &view, PyBUF_INDIRECT)
-    PyBuffer_ToContiguous(data, &view, view.len, b'C')
-    PyBuffer_Release(&view)
+        if needs_bkg_buffer(intype.id, outtype.id):
+            back_buf = emalloc(H5Tget_size(outtype.id)*len)
 
-    H5Tconvert(intype.id, outtype.id, len, data, NULL, H5P_DEFAULT)
+        H5Tconvert(intype.id, outtype.id, len, data, back_buf, H5P_DEFAULT)
 
-    in_vlen[0].len = len
-    in_vlen[0].ptr = data
+        in_vlen[0].len = len
+        in_vlen[0].ptr = data
+
+    finally:
+        free(back_buf)
 
     return 0
 

@@ -14,11 +14,6 @@ take advantage of some of HDF5's features. h5py provides a comparison between
 the two projects (see :ref:`h5py_pytable_cmp`), as does the
 `PyTables project <https://www.pytables.org/FAQ.html#how-does-pytables-compare-with-the-h5py-project>`_.
 
-.. seealso::
-
-   `HDF Group's list of HDF5 tools
-   <https://portal.hdfgroup.org/display/HDF5/HDF5+Tools+by+Category>`_
-
 .. contents::
    :local:
 
@@ -66,7 +61,7 @@ Exploring and Visualising HDF5 files
 h5py does not contain a tool for exploring or visualising HDF5 files, but tools
 that can display the structure of h5py include:
 
-* `HDFView <https://confluence.hdfgroup.org/display/HDFVIEW/HDFView>`_ is a
+* `HDFView <https://www.hdfgroup.org/download-hdfview/>`_ is a
   visual tool for browsing and editing HDF5 files.
 * `ViTables <https://vitables.org/>`_ is a GUI for browsing and editing files
   in both PyTables and HDF5 formats, and is built on top of PyTables.
@@ -85,7 +80,7 @@ Some projects providing additional HDF5 filter with integration into h5py
 include:
 
 * `hdf5plugin <https://github.com/silx-kit/hdf5plugin>`_: this provides several
-  plugins (currently blosc, bitshuffle, lz4, FCIDECOMP and ZFP), and newer
+  plugins (currently Blosc, Blosc2, BitShuffle, BZip2, FciDecomp, LZ4, SZ, SZ3, Zfp, ZStd), and newer
   plugins should look to supporting h5py via inclusion into hdf5plugin.
 
 Libraries extending h5py
@@ -105,3 +100,6 @@ These libraries offer additional general functionality on top of h5py:
 * `h5pickle <https://github.com/DaanVanVugt/h5pickle>`_ wraps h5py to allow
   pickling objects such as :class:`.File` or :class:`.Dataset`. This relies on
   the file being available at the same path when unpickling.
+* `b2h5py <https://github.com/Blosc/b2h5py>`_ provides h5py with transparent,
+  automatic optimized reading of n-dimensional slices of Blosc2-compressed
+  datasets, using direct chunk access and 2-level partitioning.

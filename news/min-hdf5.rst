@@ -1,7 +1,13 @@
 New features
 ------------
 
-* Low-level ``h5z.register_filter`` function that allows to register a HDF5 filter.
+* <news item>
+
+Breaking changes
+----------------
+
+* The minimum supported version of HDF5 is now 1.10.7, and within the 1.12 series
+  the minimum supported version is now 1.12.1.
 
 Deprecations
 ------------
@@ -11,7 +17,7 @@ Deprecations
 Exposing HDF5 functions
 -----------------------
 
-* ``H5Zregister``
+* <news item>
 
 Bug fixes
 ---------
