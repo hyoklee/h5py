@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1757962040111,
+  "lastUpdate": 1757991634273,
   "repoUrl": "https://github.com/hyoklee/h5py",
   "entries": {
     "Benchmark": [
@@ -131,6 +131,48 @@ window.BENCHMARK_DATA = {
           {
             "name": "Threaded Read Speed (4-threaded 3x64 slices)",
             "value": 12257.362,
+            "unit": "MB/s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "H. Joe Lee",
+            "username": "hyoklee",
+            "email": "hyoklee@hdfgroup.org"
+          },
+          "committer": {
+            "name": "H. Joe Lee",
+            "username": "hyoklee",
+            "email": "hyoklee@hdfgroup.org"
+          },
+          "id": "74465107ba777d452991d3df5eab11cba1656595",
+          "message": "feat: add HDF5 commit hash tracking to benchmark workflow\n\n- Add HDF5 commit hash detection and storage\n- Implement conditional execution based on HDF5 changes\n- Skip benchmark runs when HDF5 develop hasn't changed on scheduled runs\n- Save HDF5 hash to gh-pages branch for future comparisons\n- Add informative skip messages when no changes detected\n\nFollows the same pattern as h5bench build-and-test.yml workflow\nto optimize CI resource usage while ensuring comprehensive testing.\n\n🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+          "timestamp": "2025-09-15T18:40:39Z",
+          "url": "https://github.com/hyoklee/h5py/commit/74465107ba777d452991d3df5eab11cba1656595"
+        },
+        "date": 1757991634018,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Uncompressed Data Saving Speed",
+            "value": 629.39,
+            "unit": "MB/s"
+          },
+          {
+            "name": "Effective Write Speed",
+            "value": 629.424,
+            "unit": "MB/s"
+          },
+          {
+            "name": "Sequential Read Speed (3x64 slices)",
+            "value": 12080.422,
+            "unit": "MB/s"
+          },
+          {
+            "name": "Threaded Read Speed (4-threaded 3x64 slices)",
+            "value": 12369.478,
             "unit": "MB/s"
           }
         ]
