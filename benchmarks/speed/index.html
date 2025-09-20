@@ -105,6 +105,7 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.2/dist/Chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="data.js"></script>
     <script id="main-script">
       'use strict';
@@ -177,11 +178,13 @@
 
             const color = toolColors[dataset.length > 0 ? dataset[0].tool : '_'];
             const data = {
-              labels: dataset.map(d => d.commit.id.slice(0, 7)),
               datasets: [
                 {
                   label: name,
-                  data: dataset.map(d => d.bench.value),
+                  data: dataset.map(d => ({
+                    x: new Date(d.date),
+                    y: d.bench.value
+                  })),
                   borderColor: color,
                   backgroundColor: color + '60', // Add alpha for #rrggbbaa
                 }
@@ -191,9 +194,17 @@
               scales: {
                 xAxes: [
                   {
+                    type: 'time',
+                    time: {
+                      unit: 'day',
+                      displayFormats: {
+                        day: 'yyyy-MM-dd'
+                      },
+                      tooltipFormat: 'yyyy-MM-dd'
+                    },
                     scaleLabel: {
                       display: true,
-                      labelString: 'commit',
+                      labelString: 'date',
                     },
                   }
                 ],
