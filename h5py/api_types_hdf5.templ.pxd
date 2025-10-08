@@ -661,6 +661,7 @@ cdef extern from "hdf5.h":
     H5T_ENUM             = 8,   # enumeration types
     H5T_VLEN             = 9,   # variable-length types
     H5T_ARRAY            = 10,  # array types
+    H5T_COMPLEX          = 11,  # complex number types
     H5T_NCLASSES                # this must be last
 
   # Native search direction
