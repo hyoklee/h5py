@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1759892519686,
+  "lastUpdate": 1759896328871,
   "repoUrl": "https://github.com/hyoklee/h5py",
   "entries": {
     "Benchmark": [
@@ -936,6 +936,45 @@ window.BENCHMARK_DATA = {
           {
             "name": "Threaded Read Time (4-threaded 3x64 slices)",
             "value": 4.114,
+            "unit": "seconds"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hyoklee@hdfgroup.org",
+            "name": "H. Joe Lee",
+            "username": "hyoklee"
+          },
+          "committer": {
+            "email": "hyoklee@hdfgroup.org",
+            "name": "H. Joe Lee",
+            "username": "hyoklee"
+          },
+          "distinct": true,
+          "id": "18eb1530885053569c960807ffe720654649fcaf",
+          "message": "feat: support complex",
+          "timestamp": "2025-10-07T22:59:13-05:00",
+          "tree_id": "a3249cf5178ff432056293e22dc51bba355fe4bc",
+          "url": "https://github.com/hyoklee/h5py/commit/18eb1530885053569c960807ffe720654649fcaf"
+        },
+        "date": 1759896327629,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "Write Time",
+            "value": 6.894,
+            "unit": "seconds"
+          },
+          {
+            "name": "Sequential Read Time (3x64 slices)",
+            "value": 4.119,
+            "unit": "seconds"
+          },
+          {
+            "name": "Threaded Read Time (4-threaded 3x64 slices)",
+            "value": 4.074,
             "unit": "seconds"
           }
         ]
