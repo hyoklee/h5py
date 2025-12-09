@@ -648,6 +648,22 @@ cdef extern from "hdf5.h":
     H5T_PAD_BACKGROUND  = 2
 
   # HDF5 type classes
+  ### {{if HDF5_VERSION < (2, 0, 0)}}
+  cdef enum H5T_class_t:
+    H5T_NO_CLASS         = -1,  # error
+    H5T_INTEGER          = 0,   # integer types
+    H5T_FLOAT            = 1,   # floating-point types
+    H5T_TIME             = 2,   # date and time types
+    H5T_STRING           = 3,   # character string types
+    H5T_BITFIELD         = 4,   # bit field types
+    H5T_OPAQUE           = 5,   # opaque types
+    H5T_COMPOUND         = 6,   # compound types
+    H5T_REFERENCE        = 7,   # reference types
+    H5T_ENUM             = 8,   # enumeration types
+    H5T_VLEN             = 9,   # variable-length types
+    H5T_ARRAY            = 10,  # array types
+    H5T_NCLASSES                # this must be last
+  ### {{else}}
   cdef enum H5T_class_t:
     H5T_NO_CLASS         = -1,  # error
     H5T_INTEGER          = 0,   # integer types
@@ -663,6 +679,7 @@ cdef extern from "hdf5.h":
     H5T_ARRAY            = 10,  # array types
     H5T_COMPLEX          = 11,  # complex number types
     H5T_NCLASSES                # this must be last
+  ### {{endif}}
 
   # Native search direction
   cdef enum H5T_direction_t:

@@ -76,8 +76,10 @@ cpdef TypeID typewrap(hid_t id_):
         pcls = TypeVlenID
     elif cls == H5T_ARRAY:
         pcls = TypeArrayID
+    ### {{if HDF5_VERSION >= (2, 0, 0)}}
     elif cls == H5T_COMPLEX:
         pcls = TypeComplexID
+    ### {{endif}}
     else:
         pcls = TypeID
 
@@ -105,7 +107,9 @@ REFERENCE = H5T_REFERENCE
 ENUM      = H5T_ENUM
 VLEN      = H5T_VLEN
 ARRAY     = H5T_ARRAY
+### {{if HDF5_VERSION >= (2, 0, 0)}}
 COMPLEX   = H5T_COMPLEX
+### {{endif}}
 
 # Enumeration H5T_sign_t
 SGN_NONE   = H5T_SGN_NONE
@@ -1268,6 +1272,7 @@ cdef class TypeCompoundID(TypeCompositeID):
         return typeobj
 
 
+### {{if HDF5_VERSION >= (2, 0, 0)}}
 cdef class TypeComplexID(TypeAtomicID):
     """
         Represents a complex number type (HDF5 2.0+)
@@ -1311,6 +1316,7 @@ cdef class TypeComplexID(TypeAtomicID):
         except TypeError:
             # If the specific dtype isn't supported, raise error
             raise TypeError(f"No NumPy equivalent for {size}-byte complex type")
+### {{endif}}
 
 
 cdef class TypeEnumID(TypeCompositeID):
