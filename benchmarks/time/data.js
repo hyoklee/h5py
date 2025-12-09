@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1765250455935,
+  "lastUpdate": 1765290105172,
   "repoUrl": "https://github.com/hyoklee/h5py",
   "entries": {
     "Benchmark": [
@@ -2424,6 +2424,45 @@ window.BENCHMARK_DATA = {
           {
             "name": "Threaded Read Time (4-threaded 3x64 slices)",
             "value": 4.134,
+            "unit": "seconds"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hyoklee@hdfgroup.org",
+            "name": "H. Joe Lee",
+            "username": "hyoklee"
+          },
+          "committer": {
+            "email": "hyoklee@hdfgroup.org",
+            "name": "H. Joe Lee",
+            "username": "hyoklee"
+          },
+          "distinct": true,
+          "id": "54e89888e92d7e696f31f6e8898b199ad2c9e14e",
+          "message": "Guard H5T_COMPLEX references for HDF5 2.0+ compatibility\n\nH5T_COMPLEX was added in HDF5 2.0 and is not available in earlier\nversions. This was causing compilation failures in CI when building\nagainst HDF5 1.x.\n\nChanges:\n- Add version guards (HDF5_VERSION >= 2.0.0) around H5T_COMPLEX enum\n  value in api_types_hdf5.templ.pxd\n- Guard H5T_COMPLEX usage in h5t.templ.pyx typewrap function\n- Guard COMPLEX constant assignment\n- Guard TypeComplexID class definition\n\nFixes: https://github.com/hyoklee/h5py/actions/runs/20050299722\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>",
+          "timestamp": "2025-12-08T21:36:58-06:00",
+          "tree_id": "5fe5617f128fd0eed7823b2031c97a6cdb2c4c62",
+          "url": "https://github.com/hyoklee/h5py/commit/54e89888e92d7e696f31f6e8898b199ad2c9e14e"
+        },
+        "date": 1765290103961,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "Write Time",
+            "value": 7.16,
+            "unit": "seconds"
+          },
+          {
+            "name": "Sequential Read Time (3x64 slices)",
+            "value": 4.22,
+            "unit": "seconds"
+          },
+          {
+            "name": "Threaded Read Time (4-threaded 3x64 slices)",
+            "value": 4.103,
             "unit": "seconds"
           }
         ]
