@@ -13,19 +13,20 @@
     Tests all aspects of File objects, including their creation.
 """
 
+import multiprocessing
 import os
 import stat
 import pickle
 import tempfile
 import time
-import subprocess
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from hashlib import sha256
 
 import pytest
 
 from .common import ut, TestCase, UNICODE_FILENAMES, closed_tempfile, make_name
-from h5py._hl.files import direct_vfd
+from h5py._hl.files import direct_vfd, make_fapl
 from h5py import File
 import h5py
 import pathlib
@@ -276,6 +277,24 @@ class TestPageBuffering(TestCase):
             fapl = f.id.get_access_plist()
             self.assertEqual(fapl.get_page_buffer_size()[0], fsp)
 
+    def test_page_buf_size_zero(self):
+        """An integer page_buf_size=0 is honoured, like the string "0"."""
+        for page_buf_size, expected in [
+            (0, (0, 50, 20)),
+            ("0", (0, 50, 20)),
+            (None, (0, 0, 0)),
+        ]:
+            with self.subTest(page_buf_size=page_buf_size):
+                fapl = make_fapl(driver=None, page_buf_size=page_buf_size,
+                                 min_meta_keep=50, min_raw_keep=20)
+                self.assertEqual(fapl.get_page_buffer_size(), expected)
+
+    def test_page_buf_size_empty_string(self):
+        """A nonsensical empty-string page_buf_size raises ValueError."""
+        with self.assertRaises(ValueError):
+            make_fapl(driver=None, page_buf_size="", min_meta_keep=50,
+                      min_raw_keep=20)
+
 
 class TestModes(TestCase):
 
@@ -480,8 +499,9 @@ class TestDrivers(TestCase):
 
 
 @pytest.mark.skipif(
+    h5py.version.hdf5_version_tuple[0] == 1  and
     h5py.version.hdf5_version_tuple[1] % 2 != 0 ,
-    reason='Not HDF5 release version'
+    reason='Not HDF5 release version 1.x.y'
 )
 class TestNewLibver(TestCase):
 
@@ -696,12 +716,8 @@ class TestUnicode(TestCase):
         """ Unicode filenames can be used, and seen correctly from python
         """
         fname = self.mktemp(prefix=chr(0x201a))
-        print(h5py.version.info)
-        from h5py._hl.compat import WINDOWS_ENCODING
-        print("Windows file encoding in use", WINDOWS_ENCODING)
-        print(f"Creating {fname!r}")
-        with File(fname, 'w') as f:
-            print(os.listdir(self.tempdir))
+        with File(fname, 'w'):
+            pass
         assert os.path.exists(fname)
 
     def test_nonexistent_file_unicode(self):
@@ -1009,31 +1025,24 @@ class TestFileLocking:
         """Test file locking option from different concurrent processes"""
         fname = tmp_path / make_name("test{}.h5")
 
-        def open_in_subprocess(filename, mode, locking):
-            """Open HDF5 file in a subprocess and return True on success"""
-            h5py_import_dir = str(pathlib.Path(h5py.__file__).parent.parent)
-
-            process = subprocess.run(
-                [
-                    sys.executable,
-                    "-c",
-                    f"""
-import sys
-sys.path.insert(0, {h5py_import_dir!r})
-import h5py
-f = h5py.File({str(filename)!r}, mode={mode!r}, locking={locking})
-                    """,
-                ],
-                capture_output=True)
-            return process.returncode == 0 and not process.stderr
-
         # Create test file
-        with h5py.File(fname, mode="w", locking=True) as f:
+        with File(fname, mode="w", locking=True) as f:
             f["data"] = 1
 
-        with h5py.File(fname, mode="r", locking=False) as f:
+        ctx = multiprocessing.get_context("spawn")
+        with (
+            ProcessPoolExecutor(mp_context=ctx, max_workers=1) as ex,
+            File(fname, mode="r", locking=False) as f,
+        ):
             # Opening in write mode with locking is expected to work
-            assert open_in_subprocess(fname, mode="w", locking=True)
+            future = ex.submit(open_and_close, fname, mode="w", locking=True)
+            future.result(timeout=10)
+
+
+def open_and_close(*args, **kwargs):
+    """Open and close HDF5 file, for use in a subprocess"""
+    with File(*args, **kwargs):
+        pass
 
 
 @pytest.mark.skipif(

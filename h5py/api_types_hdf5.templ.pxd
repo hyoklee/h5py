@@ -171,8 +171,8 @@ cdef extern from "hdf5.h":
     H5F_LIBVER_V112 = 3,
     H5F_LIBVER_V114 = 4,
     H5F_LIBVER_V200 = 5,
+    H5F_LIBVER_LATEST   = 5,
     H5F_LIBVER_NBOUNDS
-  int H5F_LIBVER_LATEST  # Use the latest possible format available for storing objects
   ### {{endif}}
 
 # === H5FD - Low-level file descriptor API ====================================
@@ -662,6 +662,9 @@ cdef extern from "hdf5.h":
     H5T_ENUM             = 8,   # enumeration types
     H5T_VLEN             = 9,   # variable-length types
     H5T_ARRAY            = 10,  # array types
+    ### {{if HDF5_VERSION >= (2, 0, 0)}}
+    H5T_COMPLEX          = 11,  # complex number types
+    ### {{endif}}
     H5T_NCLASSES                # this must be last
   ### {{else}}
   cdef enum H5T_class_t:
@@ -690,6 +693,12 @@ cdef extern from "hdf5.h":
   # For vlen strings
   cdef size_t H5T_VARIABLE
 
+  ### {{if HDF5_VERSION >= (2, 0, 0)}}
+  int H5_SIZEOF_FLOAT_COMPLEX
+  int H5_SIZEOF_DOUBLE_COMPLEX
+  int H5_SIZEOF_LONG_DOUBLE_COMPLEX
+  ### {{endif}}
+
   # --- Predefined datatypes --------------------------------------------------
 
   cdef hid_t H5T_NATIVE_B8
@@ -712,6 +721,11 @@ cdef extern from "hdf5.h":
   cdef hid_t H5T_NATIVE_LDOUBLE
   ### {{if HDF5_VERSION > (1, 14, 3)}}
   cdef hid_t H5T_NATIVE_FLOAT16
+  ### {{endif}}
+  ### {{if HDF5_VERSION >= (2, 0, 0)}}
+  cdef hid_t H5T_NATIVE_FLOAT_COMPLEX
+  cdef hid_t H5T_NATIVE_DOUBLE_COMPLEX
+  cdef hid_t H5T_NATIVE_LDOUBLE_COMPLEX
   ### {{endif}}
 
   # "Standard" types
@@ -746,6 +760,14 @@ cdef extern from "hdf5.h":
   ### {{if HDF5_VERSION > (1, 14, 3)}}
   cdef hid_t H5T_IEEE_F16BE
   cdef hid_t H5T_IEEE_F16LE
+  ### {{endif}}
+  ### {{if HDF5_VERSION >= (2, 0, 0)}}
+  cdef hid_t H5T_COMPLEX_IEEE_F16LE
+  cdef hid_t H5T_COMPLEX_IEEE_F16BE
+  cdef hid_t H5T_COMPLEX_IEEE_F32LE
+  cdef hid_t H5T_COMPLEX_IEEE_F32BE
+  cdef hid_t H5T_COMPLEX_IEEE_F64LE
+  cdef hid_t H5T_COMPLEX_IEEE_F64BE
   ### {{endif}}
 
   cdef hid_t H5T_NATIVE_INT8
