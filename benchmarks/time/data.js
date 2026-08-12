@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784264677412,
+  "lastUpdate": 1786544698078,
   "repoUrl": "https://github.com/hyoklee/h5py",
   "entries": {
     "Benchmark": [
@@ -6759,6 +6759,45 @@ window.BENCHMARK_DATA = {
           {
             "name": "Threaded Read Time (4-threaded 3x64 slices)",
             "value": 3.841,
+            "unit": "seconds"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hyoklee@hdfgroup.org",
+            "name": "H. Joe Lee",
+            "username": "hyoklee"
+          },
+          "committer": {
+            "email": "hyoklee@hdfgroup.org",
+            "name": "H. Joe Lee",
+            "username": "hyoklee"
+          },
+          "distinct": true,
+          "id": "f09d93c4dbc779b7403989f5d137eb155ffb6993",
+          "message": "Drop duplicate complex-type support superseded by upstream\n\nUpstream implemented HDF5 2.0 complex number support, and the merge of\nupstream/master left the local implementation from 18eb1530 alongside it.\nCython then failed with:\n\n    h5py/h5t.pyx:1326:0: C class 'TypeComplexID' already implemented\n    h5py/h5t.pyx:1331:4: 'py_dtype' already defined\n\nRemove the local TypeComplexID, keeping upstream's version, which is wired\ninto typewrap() and derives dtypes from _available_cmplx_types instead of\nhardcoding sizes. Also drop the now-redundant H5T_class_t enum branch in\napi_types_hdf5.templ.pxd; upstream's single enum already guards H5T_COMPLEX\non HDF5_VERSION >= (2, 0, 0).\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-08-12T09:18:55-05:00",
+          "tree_id": "ea0f98c85dea62c0c0f9a5a5593cf072b18acb09",
+          "url": "https://github.com/hyoklee/h5py/commit/f09d93c4dbc779b7403989f5d137eb155ffb6993"
+        },
+        "date": 1786544696097,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "Write Time",
+            "value": 6.154,
+            "unit": "seconds"
+          },
+          {
+            "name": "Sequential Read Time (3x64 slices)",
+            "value": 3.835,
+            "unit": "seconds"
+          },
+          {
+            "name": "Threaded Read Time (4-threaded 3x64 slices)",
+            "value": 3.714,
             "unit": "seconds"
           }
         ]
