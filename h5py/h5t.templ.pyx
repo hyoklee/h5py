@@ -1332,53 +1332,6 @@ cdef class TypeCompoundID(TypeCompositeID):
         return typeobj
 
 
-### {{if HDF5_VERSION >= (2, 0, 0)}}
-cdef class TypeComplexID(TypeAtomicID):
-    """
-        Represents a complex number type (HDF5 2.0+)
-    """
-
-    cdef object py_dtype(self):
-        # Translation function for complex types
-        # Complex types in HDF5 2.0 are atomic types with a base float type
-
-        cdef int size = self.get_size()
-
-        # Determine byte order
-        cdef int order = self.get_order()
-        cdef str order_char
-        if order == H5T_ORDER_LE:
-            order_char = '<'
-        elif order == H5T_ORDER_BE:
-            order_char = '>'
-        else:
-            order_char = '='
-
-        # Complex size is 2x the base float size
-        # c8 = complex64 (2x float32), c16 = complex128 (2x float64)
-        # Note: NumPy only supports c8 and c16 on most platforms
-        if size == 8:  # complex64 (float32 real + float32 imag)
-            dtype_str = order_char + 'c8'
-        elif size == 16:  # complex128 (float64 real + float64 imag)
-            dtype_str = order_char + 'c16'
-        elif size == 32:  # complex256 (float128 real + float128 imag)
-            # NumPy doesn't support c32, and we can't convert 32->16 bytes
-            # Raise error to indicate no NumPy equivalent exists
-            raise TypeError(f"No NumPy equivalent for {size}-byte complex type")
-        elif size == 4:  # complex32 (float16 real + float16 imag)
-            # NumPy doesn't support c4
-            raise TypeError(f"No NumPy equivalent for {size}-byte complex type")
-        else:
-            raise TypeError(f"Unsupported complex type size: {size}")
-
-        try:
-            return np.dtype(dtype_str)
-        except TypeError:
-            # If the specific dtype isn't supported, raise error
-            raise TypeError(f"No NumPy equivalent for {size}-byte complex type")
-### {{endif}}
-
-
 cdef class TypeEnumID(TypeCompositeID):
 
     """
