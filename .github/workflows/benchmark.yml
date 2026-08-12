@@ -9,16 +9,22 @@ on:
     # Run daily at 2 AM UTC
     - cron: '0 2 * * *'
 
+permissions: {}
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # push benchmark data + HDF5 hash to gh-pages; comment on alerts
 
     steps:
     - name: Checkout h5py
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: '3.11'
 
@@ -28,11 +34,12 @@ jobs:
         sudo apt-get install -y build-essential cmake pkg-config libssl-dev zlib1g-dev
 
     - name: Checkout latest HDF5
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: HDFGroup/hdf5
         path: hdf5-src
         ref: develop
+        persist-credentials: false
 
     - name: Get HDF5 commit hash
       id: hdf5-hash
@@ -44,12 +51,18 @@ jobs:
 
     - name: Check previous HDF5 hash
       id: check-hash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPOSITORY: ${{ github.repository }}
+        CURRENT_HASH: ${{ steps.hdf5-hash.outputs.hash }}
+        EVENT_NAME: ${{ github.event_name }}
       run: |
         # Try to get the previous hash from gh-pages branch
         PREV_HASH=""
         if git ls-remote --heads origin gh-pages >/dev/null 2>&1; then
           # Clone gh-pages branch to get previous hash
-          git clone --single-branch --branch gh-pages https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} gh-pages-temp || true
+          git clone --single-branch --branch gh-pages \
+            "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}" gh-pages-temp || true
           if [ -f gh-pages-temp/hdf5-hash.txt ]; then
             PREV_HASH=$(cat gh-pages-temp/hdf5-hash.txt)
           fi
@@ -57,9 +70,9 @@ jobs:
         fi
 
         echo "Previous HDF5 hash: ${PREV_HASH:-none}"
-        echo "Current HDF5 hash: ${{ steps.hdf5-hash.outputs.hash }}"
+        echo "Current HDF5 hash: $CURRENT_HASH"
 
-        if [ "$PREV_HASH" = "${{ steps.hdf5-hash.outputs.hash }}" ] && [ "${{ github.event_name }}" = "schedule" ]; then
+        if [ "$PREV_HASH" = "$CURRENT_HASH" ] && [ "$EVENT_NAME" = "schedule" ]; then
           echo "skip_tests=true" >> $GITHUB_OUTPUT
           echo "No HDF5 changes detected, skipping tests for scheduled run"
         else
@@ -108,7 +121,7 @@ jobs:
 
     - name: Store time-based benchmark results
       if: steps.check-hash.outputs.skip_tests != 'true'
-      uses: benchmark-action/github-action-benchmark@v1
+      uses: benchmark-action/github-action-benchmark@52576c92bccf6ac60c8223ec7eb2565637cae9ba # v1.22.1
       with:
         tool: 'customSmallerIsBetter'
         output-file-path: benchmark-time.json
@@ -122,7 +135,7 @@ jobs:
 
     - name: Store speed-based benchmark results
       if: steps.check-hash.outputs.skip_tests != 'true'
-      uses: benchmark-action/github-action-benchmark@v1
+      uses: benchmark-action/github-action-benchmark@52576c92bccf6ac60c8223ec7eb2565637cae9ba # v1.22.1
       with:
         tool: 'customBiggerIsBetter'
         output-file-path: benchmark-speed.json
@@ -136,25 +149,32 @@ jobs:
 
     - name: Update HDF5 hash file
       if: steps.check-hash.outputs.skip_tests != 'true'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPOSITORY: ${{ github.repository }}
+        CURRENT_HASH: ${{ steps.hdf5-hash.outputs.hash }}
       run: |
         # Clone gh-pages to update hash file
-        git clone --single-branch --branch gh-pages https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} gh-pages-update
+        git clone --single-branch --branch gh-pages \
+          "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}" gh-pages-update
         cd gh-pages-update
-        echo "${{ steps.hdf5-hash.outputs.hash }}" > hdf5-hash.txt
+        echo "$CURRENT_HASH" > hdf5-hash.txt
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git add hdf5-hash.txt
-        git commit -m "update: HDF5 commit hash to ${{ steps.hdf5-hash.outputs.hash }}"
+        git commit -m "update: HDF5 commit hash to $CURRENT_HASH"
         git push
 
     - name: Skip message
       if: steps.check-hash.outputs.skip_tests == 'true'
+      env:
+        CURRENT_HASH: ${{ steps.hdf5-hash.outputs.hash }}
       run: |
         echo "⏭️ Skipping tests - no HDF5 changes detected since last run"
-        echo "Previous HDF5 hash matches current hash: ${{ steps.hdf5-hash.outputs.hash }}"
+        echo "Previous HDF5 hash matches current hash: $CURRENT_HASH"
 
     - name: Upload test results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       if: steps.check-hash.outputs.skip_tests != 'true'
       with:
         name: benchmark-results
