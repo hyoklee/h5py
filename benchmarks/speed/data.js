@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786545542968,
+  "lastUpdate": 1786680472057,
   "repoUrl": "https://github.com/hyoklee/h5py",
   "entries": {
     "Benchmark": [
@@ -7757,6 +7757,48 @@ window.BENCHMARK_DATA = {
           {
             "name": "Threaded Read Speed (4-threaded 3x64 slices)",
             "value": 13176.783,
+            "unit": "MB/s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "H. Joe Lee",
+            "username": "hyoklee",
+            "email": "hyoklee@hdfgroup.org"
+          },
+          "committer": {
+            "name": "H. Joe Lee",
+            "username": "hyoklee",
+            "email": "hyoklee@hdfgroup.org"
+          },
+          "id": "84c8fdb0217b69ec23670965504243b05af263c9",
+          "message": "CI: resolve zizmor code-scanning findings in benchmark workflow\n\nAll 14 open code-scanning alerts were in benchmark.yml, the one workflow\nstill using floating action tags and default permissions:\n\n- unpinned-uses (6): pin every action to a commit SHA, matching the SHAs\n  the other workflows already use. This also clears the Node 20\n  deprecation warnings, since v4 -> v7 moves off the retired runtime.\n- template-injection (5): pass steps.hdf5-hash.outputs.hash and\n  github.event_name through env: instead of expanding ${{ }} directly\n  into run: blocks.\n- excessive-permissions (1): add top-level permissions: {} with a\n  job-level contents: write, following gha-security-scan.yml.\n- artipacked (2): set persist-credentials: false on both checkouts. The\n  gh-pages clones use an explicit token URL, and git ls-remote against\n  this public repo works unauthenticated, so nothing depended on the\n  persisted credentials.\n\nThe GITHUB_TOKEN is now passed to the gh-pages clones via env rather than\ninterpolated into the command line, keeping it out of process listings.\n\nVerified with zizmor 1.29.0: benchmark.yml and every other workflow report\nno findings at the default persona used by the zizmor action in CI.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-08-12T14:32:50Z",
+          "url": "https://github.com/hyoklee/h5py/commit/84c8fdb0217b69ec23670965504243b05af263c9"
+        },
+        "date": 1786680470830,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Uncompressed Data Saving Speed",
+            "value": 687.238,
+            "unit": "MB/s"
+          },
+          {
+            "name": "Effective Write Speed",
+            "value": 687.276,
+            "unit": "MB/s"
+          },
+          {
+            "name": "Sequential Read Speed (3x64 slices)",
+            "value": 14309.541,
+            "unit": "MB/s"
+          },
+          {
+            "name": "Threaded Read Speed (4-threaded 3x64 slices)",
+            "value": 14580.188,
             "unit": "MB/s"
           }
         ]
