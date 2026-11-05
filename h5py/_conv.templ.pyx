@@ -18,7 +18,7 @@ from .h5 import get_config
 from .h5r cimport Reference, RegionReference, hobj_ref_t, hdset_reg_ref_t
 from .h5t cimport H5PY_OBJ, typewrap, py_create, TypeID, H5PY_PYTHON_OPAQUE_TAG
 from libc.stdlib cimport realloc
-from libc.string cimport strcmp
+from libc.string cimport strcmp, memset
 from .utils cimport emalloc, efree
 from ._proxy cimport needs_bkg_buffer
 cfg = get_config()
@@ -718,7 +718,11 @@ cdef int conv_vlen2ndarray(void* ipt,
         data = new_data
 
     if needs_bkg_buffer(intype.id, outtype.id):
+        # The background buffer holds the existing destination value, which a
+        # converter may release -- conv_regref2pyref decrefs it.  It has to be
+        # zeroed rather than left holding whatever was on the heap.
         back_buf = emalloc(H5Tget_size(outtype.id)*size)
+        memset(back_buf, 0, H5Tget_size(outtype.id)*size)
 
     try:
         H5Tconvert(intype.id, outtype.id, size, data, back_buf, H5P_DEFAULT)
@@ -782,6 +786,7 @@ cdef herr_t ndarray2vlen(hid_t src_id,
         int i
         PyObject **pdata = <PyObject **> buf_i
         PyObject *pdata_elem
+        cnp.dtype elem_dtype
         char* buf = <char*>buf_i
 
     if command == H5T_CONV_INIT:
@@ -809,7 +814,12 @@ cdef herr_t ndarray2vlen(hid_t src_id,
 
         # need to pass element dtype to converter
         pdata_elem = pdata[0]
-        supertype = py_create((<cnp.ndarray> pdata_elem).dtype)
+        if not isinstance(<object> pdata_elem, cnp.ndarray):
+            raise TypeError(
+                f"vlen element must be a 1D array, got {type(<object> pdata_elem).__name__}"
+            )
+        elem_dtype = (<cnp.ndarray> pdata_elem).dtype
+        supertype = py_create(elem_dtype)
         outtype = typewrap(H5Tget_super(dst_id))
 
         if buf_stride == 0:
@@ -824,18 +834,18 @@ cdef herr_t ndarray2vlen(hid_t src_id,
             if src_size >= dst_size:
                 for i in range(nl):
                     conv_ndarray2vlen(buf + (i*src_size), buf + (i*dst_size),
-                                      supertype, outtype)
+                                      elem_dtype, supertype, outtype)
             else:
                 for i in range(nl-1, -1, -1):
                     conv_ndarray2vlen(buf + (i*src_size), buf + (i*dst_size),
-                                      supertype, outtype)
+                                      elem_dtype, supertype, outtype)
         else:
             # With explicit strides, we assume that the library knows the
             # alignment better than us.  Therefore we use the given stride
             # offsets exclusively.
             for i in range(nl):
                 conv_ndarray2vlen(buf + (i*buf_stride), buf + (i*buf_stride),
-                                  supertype, outtype)
+                                  elem_dtype, supertype, outtype)
 
     else:
         return -2   # Unrecognized command.  Note this is NOT an exception.
@@ -845,6 +855,7 @@ cdef herr_t ndarray2vlen(hid_t src_id,
 
 cdef int conv_ndarray2vlen(void* ipt,
                            void* opt,
+                           cnp.dtype elem_dtype,
                            TypeID intype,
                            TypeID outtype) except -1:
     cdef:
@@ -858,7 +869,19 @@ cdef int conv_ndarray2vlen(void* ipt,
         void* back_buf = NULL
     try:
         buf_obj0 = buf_obj[0]
+        if not isinstance(<object> buf_obj0, cnp.ndarray):
+            raise TypeError(
+                f"vlen element must be a 1D array of dtype {elem_dtype}, "
+                f"got {type(<object> buf_obj0).__name__}"
+            )
         ndarray = <cnp.ndarray> buf_obj0
+        # The buffer below is sized for a 1D array of elem_dtype; anything
+        # else would be copied past its end.
+        if ndarray.ndim != 1 or ndarray.dtype != elem_dtype:
+            raise TypeError(
+                f"vlen element must be a 1D array of dtype {elem_dtype}, "
+                f"got {ndarray.ndim}D {ndarray.dtype}"
+            )
         len = ndarray.shape[0]
         nbytes = len * max(H5Tget_size(outtype.id), H5Tget_size(intype.id))
 
@@ -869,7 +892,11 @@ cdef int conv_ndarray2vlen(void* ipt,
         PyBuffer_Release(&view)
 
         if needs_bkg_buffer(intype.id, outtype.id):
+            # The background buffer holds the existing destination value, which
+            # a converter may release -- conv_regref2pyref decrefs it.  It has
+            # to be zeroed rather than left holding whatever was on the heap.
             back_buf = emalloc(H5Tget_size(outtype.id)*len)
+            memset(back_buf, 0, H5Tget_size(outtype.id)*len)
 
         H5Tconvert(intype.id, outtype.id, len, data, back_buf, H5P_DEFAULT)
 

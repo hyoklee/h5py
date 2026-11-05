@@ -52,7 +52,7 @@ jobs:
         pipx run build --sdist
         pipx run twine check --strict dist/*
     - name: Upload sdist
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: sdist
         path: dist/*.tar.gz
@@ -119,9 +119,9 @@ jobs:
       # Triage build
       - run: bash ./ci/triage_build.sh "${{ matrix.arch }}" "${{ github.event.pull_request.head.sha || github.sha }}"
 
-      # For nightlies, also build a future-compatible abi3 wheel
+      # Also build a future-compatible abi3 wheel
       # this comes first to avoid inter-job pollution which then fails abi3audit
-      - uses: pypa/cibuildwheel@1828c10ab37f080699c7b81cea34097c684a7074 # v4.2.0
+      - uses: pypa/cibuildwheel@f9b966cfadf4109556cadc5bb39ddb72d0ce664e # v4.3.5
         if: github.event_name == 'schedule' ||
             (
               (
@@ -129,17 +129,18 @@ jobs:
                 github.event_name == 'push'
               ) &&
               contains( env.TIP_COMMIT_MSG , '[pip-pre]' )
+            ) || (
+              github.repository_owner == 'h5py' &&
+              github.event_name == 'push' &&
+              github.ref_type == 'tag'
             )
         env:
           H5PY_LIMITED_API: 1
-          CIBW_BUILD: 'cp314-* cp315t-*'
-          CIBW_ENABLE: cpython-prerelease
+          CIBW_BUILD: 'cp315-*'
           CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: ''
-          PIP_EXTRA_INDEX_URL: 'https://pypi.anaconda.org/scientific-python-nightly-wheels/simple'
-          PIP_PRE: '1'
 
       # Now actually build the wheels
-      - uses: pypa/cibuildwheel@1828c10ab37f080699c7b81cea34097c684a7074 # v4.2.0
+      - uses: pypa/cibuildwheel@f9b966cfadf4109556cadc5bb39ddb72d0ce664e # v4.3.5
         env:
           CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: ''
 
@@ -147,7 +148,7 @@ jobs:
         if: runner.os == 'Windows'
 
       # And upload the results
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
           path: ./wheelhouse/*.whl
@@ -177,10 +178,10 @@ jobs:
       - run: bash ./ci/triage_build.sh "${{ matrix.arch }}" "${{ github.event.pull_request.head.sha || github.sha }}"
 
       # Now actually build the wheels
-      - uses: pypa/cibuildwheel@1828c10ab37f080699c7b81cea34097c684a7074 # v4.2.0
+      - uses: pypa/cibuildwheel@f9b966cfadf4109556cadc5bb39ddb72d0ce664e # v4.3.5
         env:
           CIBW_ARCHS: ${{ matrix.arch }}
-          CIBW_BUILD: "cp310-*"
+          CIBW_BUILD: "cp311-*"
           CIBW_BEFORE_BUILD: ${{ matrix.cibw_before_build }}
           CIBW_BUILD_FRONTEND: 'pip; args: --no-build-isolation'
           ONLY_MINDEPS_TESTS: "1"
@@ -204,13 +205,13 @@ jobs:
         shell: bash -el {0}
     steps:
       - name: Download sdist
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: sdist
           path: dist
         if: github.repository_owner == 'h5py' && github.event_name == 'push' && github.ref_type == 'tag'
       - name: Download wheels
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: cibw-wheels-*
           merge-multiple: true
@@ -219,7 +220,7 @@ jobs:
 
       # If it's a scheduled run, it was built with nightly NumPy, push to scientific-python:
       - name: Upload wheels to Anaconda Cloud as nightlies
-        uses: scientific-python/upload-nightly-action@e76cfec8a4611fd02808a801b0ff5a7d7c1b2d99 # 0.6.4
+        uses: scientific-python/upload-nightly-action@16fa02eacee1655195143de09f03676e60ef2bf5 # 0.6.5
         with:
           artifacts_path: dist
           anaconda_nightly_upload_token: ${{ secrets.ANACONDA_ORG_UPLOAD_TOKEN }}
@@ -232,5 +233,5 @@ jobs:
 
       # If it's a tag, publish to PyPI
       - name: Publish package distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         if: github.repository_owner == 'h5py' && github.event_name == 'push' && github.ref_type == 'tag'

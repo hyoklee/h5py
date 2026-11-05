@@ -34,6 +34,18 @@ from .vds import VDSmap, vds_support
 _LEGACY_GZIP_COMPRESSION_VALS = frozenset(range(10))
 MPI = h5.get_config().mpi
 
+_ALLOC_TIME_OPTIONS = {
+    "default": h5d.ALLOC_TIME_DEFAULT,
+    "early": h5d.ALLOC_TIME_EARLY,
+    "incr": h5d.ALLOC_TIME_INCR,
+    "late": h5d.ALLOC_TIME_LATE,
+}
+_FILL_TIME_OPTIONS = {
+    "alloc": h5d.FILL_TIME_ALLOC,
+    "never": h5d.FILL_TIME_NEVER,
+    "ifset": h5d.FILL_TIME_IFSET,
+}
+
 
 def make_new_dset(parent, shape=None, dtype=None, data=None, name=None,
                   chunks=None, compression=None, shuffle=None,
@@ -42,7 +54,7 @@ def make_new_dset(parent, shape=None, dtype=None, data=None, name=None,
                   external=None, track_order=None, dcpl=None, dapl=None,
                   efile_prefix=None, virtual_prefix=None, allow_unknown_filter=False,
                   rdcc_nslots=None, rdcc_nbytes=None, rdcc_w0=None, *,
-                  fill_time=None):
+                  alloc_time=None, fill_time=None):
     """ Return a new low-level dataset identifier """
 
     # Convert data to a C-contiguous ndarray
@@ -119,8 +131,7 @@ def make_new_dset(parent, shape=None, dtype=None, data=None, name=None,
     dcpl = filters.fill_dcpl(
         dcpl or h5p.create(h5p.DATASET_CREATE), shape, dtype,
         chunks, compression, compression_opts, shuffle, fletcher32,
-        maxshape, scaleoffset, external, allow_unknown_filter,
-        fill_time=fill_time)
+        maxshape, scaleoffset, external, allow_unknown_filter)
 
     # Check that compression roundtrips correctly if it was specified
     if compression is not None:
@@ -139,9 +150,17 @@ def make_new_dset(parent, shape=None, dtype=None, data=None, name=None,
             # to not trigger unwanted encoding
             dtype = h5t.string_dtype(string_info.encoding)
             fillvalue = numpy.array(fillvalue, dtype=dtype)
+            dcpl.set_fill_value(fillvalue)
+        elif dtype.subdtype is not None or dtype.hasobject:
+            # Build the buffer with the dataset's own dtype.  numpy.array()
+            # alone would drop what makes these types special: an array dtype
+            # collapses into the array's shape, and variable-length or
+            # reference values lose their object representation.
+            fill_buf = numpy.zeros((1,), dtype=dtype)
+            fill_buf[0] = fillvalue
+            dcpl.set_fill_value(fill_buf, dtype)
         else:
-            fillvalue = numpy.array(fillvalue)
-        dcpl.set_fill_value(fillvalue)
+            dcpl.set_fill_value(numpy.array(fillvalue))
 
     if track_times is None:
         # In case someone explicitly passes None for the default
@@ -158,10 +177,27 @@ def make_new_dset(parent, shape=None, dtype=None, data=None, name=None,
     elif track_order is not None:
         raise TypeError("track_order must be either True or False")
 
+    if alloc_time is not None:
+        if (at := _ALLOC_TIME_OPTIONS.get(alloc_time)) is not None:
+            dcpl.set_alloc_time(at)
+        else:
+            raise ValueError(
+                "alloc_time parameter must be default/early/incr/late or None"
+            )
+    if fill_time is not None:
+        if (ft := _FILL_TIME_OPTIONS.get(fill_time)) is not None:
+            dcpl.set_fill_time(ft)
+        else:
+            msg = ("fill_time must be one of the following choices: 'alloc', "
+                   f"'never' or 'ifset', but it is {fill_time}.")
+            raise ValueError(msg)
+
     if maxshape is not None:
         maxshape = tuple(m if m is not None else h5s.UNLIMITED for m in maxshape)
 
-    if any([efile_prefix, virtual_prefix, rdcc_nbytes, rdcc_nslots, rdcc_w0]):
+    have_cache_settings = any(
+        value is not None for value in (rdcc_nbytes, rdcc_nslots, rdcc_w0))
+    if efile_prefix is not None or virtual_prefix is not None or have_cache_settings:
         dapl = dapl or h5p.create(h5p.DATASET_ACCESS)
 
     if efile_prefix is not None:
@@ -170,7 +206,7 @@ def make_new_dset(parent, shape=None, dtype=None, data=None, name=None,
     if virtual_prefix is not None:
         dapl.set_virtual_prefix(virtual_prefix)
 
-    if rdcc_nbytes or rdcc_nslots or rdcc_w0:
+    if have_cache_settings:
         cache_settings = list(dapl.get_chunk_cache())
         if rdcc_nslots is not None:
             cache_settings[0] = rdcc_nslots
@@ -197,7 +233,9 @@ def open_dset(parent, name, dapl=None, efile_prefix=None, virtual_prefix=None,
               rdcc_nslots=None, rdcc_nbytes=None, rdcc_w0=None, **kwds):
     """ Return an existing low-level dataset identifier """
 
-    if any([efile_prefix, virtual_prefix, rdcc_nbytes, rdcc_nslots, rdcc_w0]):
+    have_cache_settings = any(
+        value is not None for value in (rdcc_nbytes, rdcc_nslots, rdcc_w0))
+    if efile_prefix is not None or virtual_prefix is not None or have_cache_settings:
         dapl = dapl or h5p.create(h5p.DATASET_ACCESS)
 
     if efile_prefix is not None:
@@ -206,7 +244,7 @@ def open_dset(parent, name, dapl=None, efile_prefix=None, virtual_prefix=None,
     if virtual_prefix is not None:
         dapl.set_virtual_prefix(virtual_prefix)
 
-    if rdcc_nbytes or rdcc_nslots or rdcc_w0:
+    if have_cache_settings:
         cache_settings = list(dapl.get_chunk_cache())
         if rdcc_nslots is not None:
             cache_settings[0] = rdcc_nslots
@@ -716,8 +754,10 @@ class Dataset(HLObject):
     @with_phil
     def fillvalue(self):
         """Fill value for this dataset (0 by default)"""
-        arr = numpy.zeros((1,), dtype=self.dtype)
-        self._dcpl.get_fill_value(arr)
+        dt = self.dtype
+        arr = numpy.zeros((1,), dtype=dt)
+        # An array dtype never survives as arr.dtype, so name it explicitly
+        self._dcpl.get_fill_value(arr, dt)
         return arr[0]
 
     @cached_property
@@ -1010,8 +1050,16 @@ class Dataset(HLObject):
 
             val = numpy.asarray(val, dtype=dtype.base, order='C')
             if cast_compound:
-                val = val.view(numpy.dtype([(names[0], dtype)]))
-                val = val.reshape(val.shape[:len(val.shape) - len(dtype.shape)])
+                cast_dtype = numpy.dtype([(names[0], dtype)])
+                cast_shape = val.shape[:len(val.shape) - len(dtype.shape)]
+                if dtype.base.kind == 'O':
+                    # Vlen data is held in object arrays, which numpy refuses to
+                    # reinterpret as another dtype, so copy it into place instead.
+                    tmp = numpy.empty(cast_shape, dtype=cast_dtype)
+                    tmp[names[0]] = val
+                    val = tmp
+                else:
+                    val = val.view(cast_dtype).reshape(cast_shape)
         elif (self.dtype.kind == 'S'
               and (h5t.check_string_dtype(self.dtype).encoding == 'utf-8')
               and (find_item_type(val) is str)
