@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794039491809,
+  "lastUpdate": 1794126892678,
   "repoUrl": "https://github.com/hyoklee/h5py",
   "entries": {
     "Benchmark": [
@@ -8506,6 +8506,43 @@ window.BENCHMARK_DATA = {
           {
             "name": "Threaded Read Time (4-threaded 3x64 slices)",
             "value": 3.872,
+            "unit": "seconds"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "H. Joe Lee",
+            "username": "hyoklee",
+            "email": "hyoklee@hdfgroup.org"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "954fe8e1819bd1920085c0ceac43f220c2bbf509",
+          "message": "Merge branch 'h5py:master' into master",
+          "timestamp": "2026-11-05T15:10:32Z",
+          "url": "https://github.com/hyoklee/h5py/commit/954fe8e1819bd1920085c0ceac43f220c2bbf509"
+        },
+        "date": 1794126891676,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "Write Time",
+            "value": 12.577,
+            "unit": "seconds"
+          },
+          {
+            "name": "Sequential Read Time (3x64 slices)",
+            "value": 6.681,
+            "unit": "seconds"
+          },
+          {
+            "name": "Threaded Read Time (4-threaded 3x64 slices)",
+            "value": 6.425,
             "unit": "seconds"
           }
         ]
