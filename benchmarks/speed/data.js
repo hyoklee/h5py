@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794474860692,
+  "lastUpdate": 1794492746105,
   "repoUrl": "https://github.com/hyoklee/h5py",
   "entries": {
     "Benchmark": [
@@ -9819,6 +9819,50 @@ window.BENCHMARK_DATA = {
           {
             "name": "Threaded Read Speed (4-threaded 3x64 slices)",
             "value": 13072.85,
+            "unit": "MB/s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hyoklee@hdfgroup.org",
+            "name": "H. Joe Lee",
+            "username": "hyoklee"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8393b02435354dfe17e96e3d39f92a75338c4329",
+          "message": "Merge branch 'h5py:master' into master",
+          "timestamp": "2026-11-12T08:07:10-06:00",
+          "tree_id": "96083908208f3b973101ebece395c7ef0ac6d7da",
+          "url": "https://github.com/hyoklee/h5py/commit/8393b02435354dfe17e96e3d39f92a75338c4329"
+        },
+        "date": 1794492745695,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Uncompressed Data Saving Speed",
+            "value": 404.604,
+            "unit": "MB/s"
+          },
+          {
+            "name": "Effective Write Speed",
+            "value": 404.626,
+            "unit": "MB/s"
+          },
+          {
+            "name": "Sequential Read Speed (3x64 slices)",
+            "value": 21840.806,
+            "unit": "MB/s"
+          },
+          {
+            "name": "Threaded Read Speed (4-threaded 3x64 slices)",
+            "value": 22814.795,
             "unit": "MB/s"
           }
         ]
